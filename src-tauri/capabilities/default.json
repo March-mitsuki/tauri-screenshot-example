@@ -15,10 +15,10 @@
     "core:window:allow-show",
     "core:window:allow-destroy",
 
-    "opener:default",
+    "fs:default",
+    "fs:allow-app-write",
 
-    "global-shortcut:allow-is-registered",
-    "global-shortcut:allow-register",
-    "global-shortcut:allow-unregister"
+    "opener:default",
+    "dialog:default"
   ]
 }

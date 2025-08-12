@@ -3,8 +3,8 @@ use std::{collections::HashMap, sync::Mutex};
 use anyhow::Result;
 use base64::{engine::general_purpose, Engine};
 use image::{codecs::jpeg::JpegEncoder, DynamicImage};
-use serde::Serialize;
-use tauri::Manager;
+use serde::{Deserialize, Serialize};
+use tauri::{Emitter, Manager};
 
 #[derive(Serialize, Clone)]
 pub struct Screenshot {
@@ -17,10 +17,24 @@ pub struct Screenshot {
     image_data: String, // Base64 encoded data
     format: String,
 }
+#[derive(Serialize, Clone)]
+pub struct Display {
+    id: u32,
+    name: String,
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+}
+#[derive(Serialize, Deserialize, Clone)]
+pub struct Point {
+    x: i32,
+    y: i32,
+}
 
-#[derive(Default)]
 pub struct AppState {
     screenshots: HashMap<String, Screenshot>,
+    displays: Vec<Display>,
 }
 
 async fn capture_all_screens() -> Result<Vec<Screenshot>> {
@@ -110,7 +124,6 @@ fn get_screenshot_data(
     app_handler: tauri::AppHandle,
 ) -> Result<Screenshot, String> {
     let window_label = webview_window.label().to_string();
-    println!("Getting screenshot data for window: {}", window_label);
     let state = app_handler.state::<Mutex<AppState>>();
     let state = state.lock().unwrap();
     state
@@ -118,6 +131,32 @@ fn get_screenshot_data(
         .get(&window_label)
         .cloned()
         .ok_or_else(|| format!("No screenshot found for window: {}", window_label))
+}
+
+#[tauri::command]
+fn get_screenshots_data(
+    app_handler: tauri::AppHandle,
+) -> Result<HashMap<String, Screenshot>, String> {
+    let state = app_handler.state::<Mutex<AppState>>();
+    let state = state.lock().unwrap();
+    Ok(state.screenshots.clone())
+}
+
+#[tauri::command]
+async fn get_displays_data(app: tauri::AppHandle) -> Result<Vec<Display>, String> {
+    let state = app.state::<Mutex<AppState>>();
+    let state = state.lock().unwrap();
+    Ok(state.displays.clone())
+}
+
+#[tauri::command]
+fn clip_start(app: tauri::AppHandle) -> Result<(), String> {
+    app.emit("clip-start", ()).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn clip_end(app: tauri::AppHandle, display_id: i32) -> Result<(), String> {
+    app.emit("clip-end", display_id).map_err(|e| e.to_string())
 }
 
 #[cfg(desktop)]
@@ -143,21 +182,63 @@ fn setup_desktop_shortcuts(app: &mut tauri::App) -> Result<()> {
     Ok(())
 }
 
+#[cfg(desktop)]
+fn get_all_displays() -> Result<Vec<Display>> {
+    let monitors = xcap::Monitor::all()?;
+    let mut displays = Vec::with_capacity(monitors.len());
+    for m in monitors {
+        displays.push(Display {
+            id: m.id()?,
+            name: m.name()?,
+            x: m.x()?,
+            y: m.y()?,
+            width: m.width()?,
+            height: m.height()?,
+        });
+    }
+    Ok(displays)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
-            app.manage(Mutex::new(AppState::default()));
-
             #[cfg(desktop)]
-            setup_desktop_shortcuts(app)?;
+            {
+                app.manage(Mutex::new(AppState {
+                    screenshots: HashMap::new(),
+                    displays: get_all_displays()?,
+                }));
+                setup_desktop_shortcuts(app)?;
+
+                let app_clone = app.handle().clone();
+                std::thread::spawn(move || {
+                    let _ = rdev::listen(move |e| {
+                        if let rdev::EventType::MouseMove { x, y } = e.event_type {
+                            let _ = app_clone.emit(
+                                "mouse-move",
+                                Point {
+                                    x: x as i32,
+                                    y: y as i32,
+                                },
+                            );
+                        }
+                    });
+                });
+            }
 
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             freeze_screens,
-            get_screenshot_data
+            get_screenshot_data,
+            get_screenshots_data,
+            get_displays_data,
+            clip_start,
+            clip_end,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
