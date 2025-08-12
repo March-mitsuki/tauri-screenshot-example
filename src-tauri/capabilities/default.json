@@ -1,0 +1,24 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Capability for all window",
+  "windows": ["*"],
+  "permissions": [
+    "core:default",
+    "core:webview:allow-create-webview-window",
+    "core:event:allow-listen",
+    "core:window:allow-set-decorations",
+    "core:window:allow-set-position",
+    "core:window:allow-set-size",
+    "core:window:allow-set-fullscreen",
+    "core:window:allow-set-resizable",
+    "core:window:allow-show",
+    "core:window:allow-destroy",
+
+    "opener:default",
+
+    "global-shortcut:allow-is-registered",
+    "global-shortcut:allow-register",
+    "global-shortcut:allow-unregister"
+  ]
+}
