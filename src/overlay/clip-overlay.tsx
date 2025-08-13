@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
@@ -6,7 +6,6 @@ import { writeFile } from "@tauri-apps/plugin-fs";
 import coordTrans, { Point } from "./cord-trans";
 import {
   clipState,
-  ClipStateData,
   displaysState,
   mousePointState,
   Screenshot,
@@ -14,13 +13,13 @@ import {
   screenshotsState,
 } from "./clip-state";
 import { ScreenLogRenderer, screenLogSignal } from "../components/screen-log";
+import {
+  Area2D,
+  drawGrayOverlay,
+  getMouseAroundArea,
+  rgbToHex,
+} from "./_shared";
 
-type Area2D = {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-};
 function detectClipArea(
   start?: { x: number; y: number },
   end?: { x: number; y: number }
@@ -133,32 +132,37 @@ async function clipImage() {
 }
 
 function setClipStartState() {
+  const globalPoint = mousePointState.data;
+  if (!globalPoint) return;
   clipState.setState({
     isClipping: true,
     endPoint: undefined,
     startPoint: coordTrans.globalToClient(
-      mousePointState.data,
+      globalPoint,
       { displayId: screenshotMetaState.data!.id },
       displaysState.data
     ),
     startPointGlobalNotNormalized: coordTrans.globalToNormalized(
-      mousePointState.data,
+      globalPoint,
       displaysState.data
     ),
   });
 }
 
 function setClipEndState() {
+  const globalPoint = mousePointState.data;
+  if (!globalPoint) return;
+
   clipState.setState((prev) => ({
     ...prev,
     isClipping: false,
     endPoint: coordTrans.globalToClient(
-      mousePointState.data,
+      globalPoint,
       { displayId: screenshotMetaState.data!.id },
       displaysState.data
     ),
     endPointGlobalNotNormalized: coordTrans.globalToNormalized(
-      mousePointState.data,
+      globalPoint,
       displaysState.data
     ),
   }));
@@ -174,19 +178,24 @@ listen("clip-end", (e) => {
   const display_id = e.payload as number;
   if (display_id === screenshotMetaState.data?.id) {
     clipImage();
+    screenLogSignal.emit("Clipped image");
   }
 });
 listen("mouse-move", (e) => {
-  const { x, y } = e.payload as Point;
-  mousePointState.setState({ x, y });
+  const p = e.payload as Point;
+  mousePointState.setState(p);
+  if (clipState.isClipping && clipState.startPoint) {
+    clipState.setClipEnd(
+      coordTrans.globalToClient(
+        p,
+        { displayId: screenshotMetaState.data!.id },
+        displaysState.data
+      )
+    );
+  }
 });
 
 export function ClipOverlay() {
-  const [mousemovePoint, setMousemovePoint] = useState<Point>();
-  const [clientMousemovePoint, setClientMousemovePoint] = useState<Point>();
-  const [isClipping, setIsClipping] = useState(false);
-  // const [clipArea, setClipArea] = useState<Area2D>();
-
   useEffect(() => {
     const handleMouseDown = () => {
       invoke("clip_start");
@@ -194,119 +203,196 @@ export function ClipOverlay() {
     const handleMouseUp = () => {
       invoke("clip_end", { displayId: screenshotMetaState.data!.id });
     };
-    const handleClipStateChange = (data: ClipStateData) => {
-      // setClipArea(detectClipArea(data.startPoint, data.endPoint));
-      setIsClipping(data.isClipping);
-      const area = detectClipArea(data.startPoint, data.endPoint);
-      const overlay = document.getElementById("clip-overlay");
-      if (!overlay) return;
-      if (!area) {
-        overlay.style.width = "0px";
-        overlay.style.height = "0px";
-        return;
-      }
+    // 用 requestAnimationFrame 和浏览器帧同步, 减少计算次数
+    const frameClipStateChange = () => {
+      try {
+        const clipData = clipState.data;
+        if (!clipData) return;
 
-      overlay.style.left = `${area.x}px`;
-      overlay.style.top = `${area.y}px`;
-      overlay.style.width = `${area.width}px`;
-      overlay.style.height = `${area.height}px`;
-    };
-    const handleMouseMove = (p: Point) => {
-      setMousemovePoint(p);
-      setClientMousemovePoint(
-        coordTrans.globalToClient(
-          p,
-          { displayId: screenshotMetaState.data!.id },
-          displaysState.data
-        )
-      );
-      if (clipState.isClipping && clipState.startPoint) {
-        clipState.setClipEnd(
-          coordTrans.globalToClient(
-            p,
-            { displayId: screenshotMetaState.data!.id },
-            displaysState.data
-          )
-        );
+        const area = detectClipArea(clipData.startPoint, clipData.endPoint);
+        const selection = document.getElementById(
+          "clip-selection"
+        ) as HTMLDivElement;
+        const overlayCanvas = document.getElementById(
+          "clip-overlay-canvas"
+        ) as HTMLCanvasElement;
+        if (!area) {
+          selection.style.width = "0px";
+          selection.style.height = "0px";
+          selection.style.outline = "none";
+          drawGrayOverlay(overlayCanvas, screenshotMetaState.data!);
+          return;
+        }
+
+        drawGrayOverlay(overlayCanvas, screenshotMetaState.data!, area);
+        selection.style.left = `${area.x}px`;
+        selection.style.top = `${area.y}px`;
+        selection.style.width = `${area.width}px`;
+        selection.style.height = `${area.height}px`;
+        selection.style.outline = "1px solid rgba(0, 153, 255, 1)";
+      } finally {
+        requestAnimationFrame(frameClipStateChange);
       }
     };
+    requestAnimationFrame(frameClipStateChange);
 
+    drawGrayOverlay(
+      document.getElementById("clip-overlay-canvas") as HTMLCanvasElement,
+      screenshotMetaState.data!
+    );
     window.addEventListener("mousedown", handleMouseDown);
     window.addEventListener("mouseup", handleMouseUp);
-    clipState.subscribe(handleClipStateChange);
-    mousePointState.subscribe(handleMouseMove);
 
     return () => {
       window.removeEventListener("mousedown", handleMouseDown);
       window.removeEventListener("mouseup", handleMouseUp);
-      clipState.unsubscribe(handleClipStateChange);
-      mousePointState.unsubscribe(handleMouseMove);
     };
   }, []);
 
   return (
     <>
+      <canvas
+        id="clip-overlay-canvas"
+        style={{
+          position: "absolute",
+          left: 0,
+          top: 0,
+        }}
+      />
       <div
-        id="clip-overlay"
-        style={
-          // clipArea
-          //   ? {
-          //       position: "absolute",
-          //       backgroundColor: "rgba(255, 255, 255, 0.5)",
-          //       border: "1px dashed rgba(0, 0, 0, 0.5)",
-          //       left: `${clipArea.x}px`,
-          //       top: `${clipArea.y}px`,
-          //       width: `${clipArea.width}px`,
-          //       height: `${clipArea.height}px`,
-          //     }
-          //   : undefined
-          {
-            position: "absolute",
-            backgroundColor: "rgba(255, 255, 255, 0.5)",
-            border: "1px dashed rgba(0, 0, 0, 0.5)",
-          }
-        }
-      ></div>
-      {mousemovePoint && (
-        <div
-          style={{
-            position: "absolute",
-            zIndex: 10,
-            left: "5rem",
-            top: "5rem",
-            color: "pink",
-          }}
-        >
-          {`(${mousemovePoint.x}, ${mousemovePoint.y})`}
-        </div>
-      )}
-      {clientMousemovePoint && (
-        <div
-          style={{
-            position: "absolute",
-            zIndex: 10,
-            left: "5rem",
-            top: "8rem",
-            color: "orange",
-          }}
-        >
-          {`(${clientMousemovePoint.x}, ${clientMousemovePoint.y})`}
-        </div>
-      )}
-      {isClipping && (
-        <div
-          style={{
-            position: "absolute",
-            zIndex: 10,
-            left: "5rem",
-            top: "2rem",
-            color: "red",
-          }}
-        >
-          Clipping...
-        </div>
-      )}
+        id="clip-selection"
+        style={{
+          position: "absolute",
+          boxSizing: "border-box",
+        }}
+      />
       <ScreenLogRenderer />
+      <ScreenshotUI />
     </>
+  );
+}
+
+function ScreenshotUI() {
+  useEffect(() => {
+    const desktopBounds = coordTrans.getDesktopBounds(displaysState.data);
+
+    const drawPixelInfo = () => {
+      try {
+        const globalPoint = mousePointState.data;
+        if (!globalPoint) return;
+
+        const thisDisplayData = screenshotMetaState.data!;
+        const container = document.getElementById(
+          "mouse-info-container"
+        ) as HTMLDivElement;
+        const clientPoint = coordTrans.globalToClient(
+          globalPoint,
+          { displayId: thisDisplayData.id },
+          displaysState.data
+        );
+
+        if (globalPoint.x < desktopBounds.originX) {
+          globalPoint.x = desktopBounds.originX;
+        }
+        if (globalPoint.x > desktopBounds.originX + desktopBounds.width) {
+          globalPoint.x = desktopBounds.originX + desktopBounds.width;
+        }
+        if (globalPoint.y < desktopBounds.originY) {
+          globalPoint.y = desktopBounds.originY;
+        }
+        if (globalPoint.y > desktopBounds.originY + desktopBounds.height) {
+          globalPoint.y = desktopBounds.originY + desktopBounds.height;
+        }
+        const isInThisDisplay = coordTrans.isGlobalPointInDisplay(
+          globalPoint,
+          thisDisplayData
+        );
+        if (!isInThisDisplay) {
+          container.style.visibility = "hidden";
+          return;
+        } else {
+          container.style.visibility = "visible";
+        }
+
+        // 处理绘制时的边界
+        if (clientPoint.x < 0) clientPoint.x = 0;
+        if (clientPoint.y < 0) clientPoint.y = 0;
+        if (clientPoint.x > window.innerWidth)
+          clientPoint.x = window.innerWidth;
+        if (clientPoint.y > window.innerHeight)
+          clientPoint.y = window.innerHeight;
+
+        const aroundAreaImg = document.getElementById(
+          "mouse-around-area-img"
+        ) as HTMLImageElement;
+        const mousePointDiv = document.getElementById(
+          "mouse-point-div"
+        ) as HTMLDivElement;
+        const mousePointRgbDiv = document.getElementById(
+          "mouse-point-rgb-div"
+        ) as HTMLDivElement;
+        const mousePointHexDiv = document.getElementById(
+          "mouse-point-hex-div"
+        ) as HTMLDivElement;
+
+        const screenshotCanvas = document.getElementById(
+          "screenshot-canvas"
+        ) as HTMLCanvasElement;
+        const [mousePointRGB, aroundAreaImgUrl, scaledCanvasWH] =
+          getMouseAroundArea(screenshotCanvas, clientPoint, 15, 5);
+
+        aroundAreaImg.src = aroundAreaImgUrl;
+        aroundAreaImg.width = scaledCanvasWH.width;
+        aroundAreaImg.height = scaledCanvasWH.height;
+
+        container.style.width = `${scaledCanvasWH.width}px`;
+        let containerLeft = clientPoint.x + 10;
+        let containerTop = clientPoint.y + 10;
+        let containerRight = containerLeft + scaledCanvasWH.width;
+        let containerBottom =
+          containerTop + container.getBoundingClientRect().height;
+
+        if (containerRight > window.innerWidth) {
+          containerLeft = clientPoint.x - scaledCanvasWH.width - 10;
+        }
+        if (containerBottom > window.innerHeight) {
+          containerTop =
+            clientPoint.y - container.getBoundingClientRect().height - 10;
+        }
+
+        container.style.left = `${containerLeft}px`;
+        container.style.top = `${containerTop}px`;
+
+        mousePointDiv.textContent = `(${globalPoint.x}, ${globalPoint.y})`;
+        mousePointRgbDiv.textContent = `RGB: ${mousePointRGB.r}, ${mousePointRGB.g}, ${mousePointRGB.b}`;
+        mousePointHexDiv.textContent = `HEX: ${rgbToHex(mousePointRGB)}`;
+      } finally {
+        requestAnimationFrame(drawPixelInfo);
+      }
+    };
+    requestAnimationFrame(drawPixelInfo);
+  }, []);
+
+  return (
+    <div
+      id="mouse-info-container"
+      style={{
+        visibility: "hidden",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        position: "relative",
+        fontSize: "12px",
+        zIndex: 10,
+        width: "100px",
+        backgroundColor: "rgba(43, 43, 43, 1)",
+        color: "whitesmoke",
+      }}
+    >
+      <img id="mouse-around-area-img" />
+      <div id="mouse-point-div" />
+      <div id="mouse-point-rgb-div" />
+      <div id="mouse-point-hex-div" />
+    </div>
   );
 }

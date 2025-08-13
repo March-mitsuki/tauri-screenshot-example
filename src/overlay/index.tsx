@@ -12,67 +12,63 @@ import {
   screenshotsState,
 } from "./clip-state";
 import { Display } from "./cord-trans";
+import { listen } from "@tauri-apps/api/event";
+import { drawScreenshot } from "./_shared";
 
-function drawScreenshot(
-  canvas: HTMLCanvasElement,
-  screen: Screenshot
-): Promise<void> {
-  return new Promise<void>((resolve, reject) => {
-    canvas.width = screen.width;
-    canvas.height = screen.height;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) {
-      reject(new Error("Failed to get canvas context"));
-      return;
-    }
-
-    const img = new Image();
-    img.src = `data:image/jpeg;base64,${screen.image_data}`;
-    img.onload = () => {
-      ctx.drawImage(img, 0, 0, screen.width, screen.height);
-      resolve();
-    };
-    img.onerror = (error) => {
-      reject(error);
-    };
-  });
-}
+listen("clip-cancel", async () => {
+  const webviewWindow = getCurrentWebviewWindow();
+  await webviewWindow.destroy();
+});
 
 function Overlay() {
   const [screenshot, setScreenshot] = useState<Screenshot>();
 
-  const getScreenshot = async () => {
-    const webviewWindow = getCurrentWebviewWindow();
-    const screenshots = await invoke<Record<string, Screenshot>>(
-      "get_screenshots_data"
-    );
-    const currentScreenshot = screenshots[webviewWindow.label];
-
-    setScreenshot(currentScreenshot);
-    screenshotMetaState.setState({
-      id: currentScreenshot.id,
-      name: currentScreenshot.name,
-      x: currentScreenshot.x,
-      y: currentScreenshot.y,
-      width: currentScreenshot.width,
-      height: currentScreenshot.height,
-      format: currentScreenshot.format,
-    });
-    screenshotsState.setState(screenshots);
-  };
-  const getAllDisplays = async () => {
-    const displays = await invoke<Display[]>("get_displays_data");
-    displaysState.setState(displays);
-  };
   useEffect(() => {
+    const getScreenshot = async () => {
+      const webviewWindow = getCurrentWebviewWindow();
+      const screenshots = await invoke<Record<string, Screenshot>>(
+        "get_screenshots_data"
+      );
+      const currentScreenshot = screenshots[webviewWindow.label];
+
+      setScreenshot(currentScreenshot);
+      screenshotMetaState.setState({
+        id: currentScreenshot.id,
+        name: currentScreenshot.name,
+        x: currentScreenshot.x,
+        y: currentScreenshot.y,
+        width: currentScreenshot.width,
+        height: currentScreenshot.height,
+        format: currentScreenshot.format,
+      });
+      screenshotsState.setState(screenshots);
+    };
+    const getAllDisplays = async () => {
+      const displays = await invoke<Display[]>("get_displays_data");
+      displaysState.setState(displays);
+    };
+    const listenForKeyDown = async (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        await invoke("clip_cancel");
+      }
+    };
+
     getScreenshot();
     getAllDisplays();
+    window.addEventListener("keydown", listenForKeyDown);
+
+    return () => {
+      window.removeEventListener("keydown", listenForKeyDown);
+    };
   }, []);
 
   const overlayWindow = async () => {
     if (!screenshot) return;
 
     const webviewWindow = getCurrentWebviewWindow();
+    const canvas = document.getElementById(
+      "screenshot-canvas"
+    ) as HTMLCanvasElement;
     const tasks = [
       webviewWindow.setDecorations(false),
       webviewWindow.setPosition(
@@ -83,13 +79,14 @@ function Overlay() {
       ),
       webviewWindow.setFullscreen(true),
       webviewWindow.setResizable(false),
+      webviewWindow.setAlwaysOnTop(true),
+      drawScreenshot(canvas, screenshot),
     ];
     await Promise.all(tasks);
-    await drawScreenshot(
-      document.getElementById("screenshot-canvas") as HTMLCanvasElement,
-      screenshot
-    );
     await webviewWindow.show();
+    // 可能会在不同的 webviewWindow 中被设置多次
+    // 但没关系, 最后随便 focus 一个就行
+    await webviewWindow.setFocus();
   };
   useEffect(() => {
     overlayWindow();

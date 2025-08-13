@@ -64,6 +64,6 @@ export const screenshotMetaState = new State<
   Omit<Screenshot, "image_data"> | undefined
 >(undefined);
 export const screenshotsState = new State<Record<string, Screenshot>>({});
-export const mousePointState = new State<Point>({ x: 0, y: 0 });
+export const mousePointState = new State<Point | undefined>(undefined);
 export const displaysState = new State<Display[]>([]);
 export const clipState = new ClipState();

@@ -35,6 +35,15 @@ export type ConvertOptions = { mode?: CoordMode };
  * 保持原始显示器坐标系，不做归一化处理
  */
 function getDesktopBounds(displays: Display[]) {
+  if (displays.length === 1) {
+    return {
+      originX: displays[0].x,
+      originY: displays[0].y,
+      width: displays[0].width,
+      height: displays[0].height,
+    };
+  }
+
   const minX = Math.min(...displays.map((d) => d.x));
   const minY = Math.min(...displays.map((d) => d.y));
   const maxR = Math.max(...displays.map((d) => d.x + d.width));
@@ -62,7 +71,10 @@ function clientToGlobal(
   opts: ConvertOptions = {}
 ): Point {
   const { mode = "logical" } = opts;
-  const d = displays.find((s) => s.id === win.displayId);
+  const d =
+    displays.length === 1
+      ? displays[0]
+      : displays.find((s) => s.id === win.displayId);
   if (!d) throw new Error(`Display ${win.displayId} not found`);
 
   const scale = d.scale ?? 1;
@@ -100,7 +112,10 @@ function globalToClient(
   opts: ConvertOptions = {}
 ): Point {
   const { mode = "logical" } = opts;
-  const d = displays.find((s) => s.id === win.displayId);
+  const d =
+    displays.length === 1
+      ? displays[0]
+      : displays.find((s) => s.id === win.displayId);
   if (!d) throw new Error(`Display ${win.displayId} not found`);
 
   const scale = d.scale ?? 1;
@@ -125,12 +140,14 @@ function hitTestDisplay(
   global: Point,
   displays: Display[]
 ): Display | undefined {
+  if (displays.length === 1) return displays[0];
+
   return displays.find(
     (d) =>
       global.x >= d.x &&
-      global.x < d.x + d.width &&
+      global.x <= d.x + d.width &&
       global.y >= d.y &&
-      global.y < d.y + d.height
+      global.y <= d.y + d.height
   );
 }
 
@@ -229,6 +246,15 @@ function screenshotToDisplay(screenshot: Screenshot): Display {
   };
 }
 
+function isGlobalPointInDisplay(global: Point, display: Display): boolean {
+  return (
+    global.x >= display.x &&
+    global.x <= display.x + display.width &&
+    global.y >= display.y &&
+    global.y <= display.y + display.height
+  );
+}
+
 const coordTrans = {
   getDesktopBounds,
   clientToGlobal,
@@ -237,5 +263,6 @@ const coordTrans = {
   globalToNormalized,
   normalizedToGlobal,
   screenshotToDisplay,
+  isGlobalPointInDisplay,
 };
 export default coordTrans;

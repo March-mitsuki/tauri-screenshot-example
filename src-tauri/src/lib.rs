@@ -159,6 +159,11 @@ fn clip_end(app: tauri::AppHandle, display_id: i32) -> Result<(), String> {
     app.emit("clip-end", display_id).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn clip_cancel(app: tauri::AppHandle) -> Result<(), String> {
+    app.emit("clip-cancel", ()).map_err(|e| e.to_string())
+}
+
 #[cfg(desktop)]
 fn setup_desktop_shortcuts(app: &mut tauri::App) -> Result<()> {
     use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
@@ -239,6 +244,7 @@ pub fn run() {
             get_displays_data,
             clip_start,
             clip_end,
+            clip_cancel,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
