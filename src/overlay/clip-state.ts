@@ -14,6 +14,7 @@ export type Screenshot = {
 
 export type ClipStateData = {
   isClipping: boolean;
+  isUserSelected: boolean;
   startPoint?: Point;
   startPointGlobalNotNormalized?: Point;
   endPoint?: Point;
@@ -24,6 +25,7 @@ class ClipState extends State<ClipStateData> {
   constructor() {
     super({
       isClipping: false,
+      isUserSelected: false,
       startPoint: { x: 0, y: 0 },
       endPoint: { x: 0, y: 0 },
     });
@@ -56,6 +58,16 @@ class ClipState extends State<ClipStateData> {
     this.setState((prevState) => ({
       ...prevState,
       endPoint: point,
+    }));
+  }
+
+  get isUserSelected() {
+    return this._state.isUserSelected;
+  }
+  setIsUserSelected(isUserSelected: boolean) {
+    this.setState((prevState) => ({
+      ...prevState,
+      isUserSelected,
     }));
   }
 }

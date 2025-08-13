@@ -1,6 +1,7 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
+import { Image as TauriImage } from "@tauri-apps/api/image";
 import { save } from "@tauri-apps/plugin-dialog";
 import { writeFile } from "@tauri-apps/plugin-fs";
 import coordTrans, { Point } from "./cord-trans";
@@ -19,6 +20,20 @@ import {
   getMouseAroundArea,
   rgbToHex,
 } from "./_shared";
+import {
+  CheckIcon,
+  CrossIcon,
+  DownloadIcon,
+  LineIcon,
+  RectIcon,
+} from "../components/icons/line";
+import { writeImage } from "@tauri-apps/plugin-clipboard-manager";
+import { DotSpinner } from "../components/dot-spinner";
+
+const STYLES_CONSTS = {
+  toolsContainerPaddingX: 4,
+  toolsContainerPaddingY: 4,
+};
 
 function detectClipArea(
   start?: { x: number; y: number },
@@ -44,14 +59,17 @@ function dataUrlToBytes(dataUrl: string): Uint8Array {
   return bytes;
 }
 
-async function clipImage() {
+async function getClippedImage(mode: "dataUrl"): Promise<string>;
+async function getClippedImage(mode: "buffer"): Promise<ArrayBuffer>;
+async function getClippedImage(mode: "tauri-img"): Promise<TauriImage>;
+async function getClippedImage(mode: "dataUrl" | "buffer" | "tauri-img") {
   const clipArea = detectClipArea(
     clipState.data.startPointGlobalNotNormalized,
     clipState.data.endPointGlobalNotNormalized
   );
   if (!clipArea) {
     screenLogSignal.emit("clip area is empty, not clipping");
-    return;
+    throw new Error("Clip area is empty");
   }
   const screenshotRecord = screenshotsState.data;
   const screenshots = Object.values(screenshotRecord);
@@ -64,7 +82,7 @@ async function clipImage() {
   const ctx = canvas.getContext("2d");
   if (!ctx) {
     screenLogSignal.emit("failed to get canvas context");
-    return;
+    throw new Error("Failed to get canvas context");
   }
 
   const draw = (s: Screenshot) => {
@@ -97,7 +115,7 @@ async function clipImage() {
   const clipCtx = clipCanvas.getContext("2d");
   if (!clipCtx) {
     screenLogSignal.emit("failed to get clip canvas context");
-    return;
+    throw new Error("Failed to get clip canvas context");
   }
 
   clipCtx.drawImage(
@@ -112,30 +130,39 @@ async function clipImage() {
     clipArea.height
   );
 
-  const clippedImgUrl = clipCanvas.toDataURL("image/jpeg");
-  const targetPath = await save({
-    defaultPath: `${Date.now()}.jpg`,
-    filters: [
-      {
-        name: "JPEG Image",
-        extensions: ["jpg", "jpeg"],
-      },
-    ],
-  });
-  if (!targetPath) return;
-  screenLogSignal.emit(`clipped image saved to: ${targetPath}`);
-  await writeFile(targetPath, dataUrlToBytes(clippedImgUrl));
-  clipState.setState({
-    isClipping: false,
-  });
-  screenLogSignal.emit("clipped image written to file successfully");
+  if (mode === "dataUrl") {
+    const clippedImgUrl = clipCanvas.toDataURL("image/jpeg");
+    return clippedImgUrl;
+  }
+  if (mode === "buffer") {
+    return clipCtx.getImageData(0, 0, clipArea.width, clipArea.height).data
+      .buffer;
+  }
+  if (mode === "tauri-img") {
+    const imageData = clipCtx.getImageData(
+      0,
+      0,
+      clipArea.width,
+      clipArea.height
+    );
+    return TauriImage.new(
+      imageData.data.buffer,
+      clipArea.width,
+      clipArea.height
+    );
+  }
+
+  throw new Error("Invalid mode, must be 'dataUrl' or 'buffer'");
 }
 
 function setClipStartState() {
   const globalPoint = mousePointState.data;
   if (!globalPoint) return;
+  const toolsContainer = document.getElementById("screenshot-tools-container");
+  toolsContainer!.style.visibility = "hidden";
   clipState.setState({
     isClipping: true,
+    isUserSelected: false,
     endPoint: undefined,
     startPoint: coordTrans.globalToClient(
       globalPoint,
@@ -156,6 +183,7 @@ function setClipEndState() {
   clipState.setState((prev) => ({
     ...prev,
     isClipping: false,
+    isUserSelected: true,
     endPoint: coordTrans.globalToClient(
       globalPoint,
       { displayId: screenshotMetaState.data!.id },
@@ -168,6 +196,26 @@ function setClipEndState() {
   }));
 }
 
+function onClipEnd() {
+  const clipArea = detectClipArea(
+    clipState.data.startPoint,
+    clipState.data.endPoint
+  );
+  if (!clipArea) return;
+
+  const toolsContainer = document.getElementById(
+    "screenshot-tools-container"
+  ) as HTMLDivElement;
+  const toolsContainerRect = toolsContainer.getBoundingClientRect();
+  toolsContainer.style.visibility = "visible";
+  const containerPos = {
+    x: clipArea.x + clipArea.width - toolsContainerRect.width,
+    y: clipArea.y + clipArea.height + 10,
+  };
+  toolsContainer.style.left = `${containerPos.x}px`;
+  toolsContainer.style.top = `${containerPos.y}px`;
+}
+
 listen("clip-start", (e) => {
   screenLogSignal.emit("get clip-start:" + JSON.stringify(e.payload));
   setClipStartState();
@@ -177,7 +225,7 @@ listen("clip-end", (e) => {
   setClipEndState();
   const display_id = e.payload as number;
   if (display_id === screenshotMetaState.data?.id) {
-    clipImage();
+    onClipEnd();
     screenLogSignal.emit("Clipped image");
   }
 });
@@ -197,10 +245,40 @@ listen("mouse-move", (e) => {
 
 export function ClipOverlay() {
   useEffect(() => {
-    const handleMouseDown = () => {
+    const handleMouseDown = (e: MouseEvent) => {
+      const isUserSelected = clipState.data.isUserSelected;
+      const toolsContainer = document.getElementById(
+        "screenshot-tools-container"
+      ) as HTMLDivElement;
+      const toolsContainerRect = toolsContainer.getBoundingClientRect();
+      if (
+        isUserSelected &&
+        e.clientX >= toolsContainerRect.left &&
+        e.clientX <= toolsContainerRect.right &&
+        e.clientY >= toolsContainerRect.top &&
+        e.clientY <= toolsContainerRect.bottom
+      ) {
+        // skip if inside tools container
+        return;
+      }
       invoke("clip_start");
     };
-    const handleMouseUp = () => {
+    const handleMouseUp = (e: MouseEvent) => {
+      const isUserSelected = clipState.data.isUserSelected;
+      const toolsContainer = document.getElementById(
+        "screenshot-tools-container"
+      ) as HTMLDivElement;
+      const toolsContainerRect = toolsContainer.getBoundingClientRect();
+      if (
+        isUserSelected &&
+        e.clientX >= toolsContainerRect.left &&
+        e.clientX <= toolsContainerRect.right &&
+        e.clientY >= toolsContainerRect.top &&
+        e.clientY <= toolsContainerRect.bottom
+      ) {
+        // skip if inside tools container
+        return;
+      }
       invoke("clip_end", { displayId: screenshotMetaState.data!.id });
     };
     // 用 requestAnimationFrame 和浏览器帧同步, 减少计算次数
@@ -274,17 +352,22 @@ export function ClipOverlay() {
 
 function ScreenshotUI() {
   useEffect(() => {
+    // ===== pixel info =====
     const desktopBounds = coordTrans.getDesktopBounds(displaysState.data);
-
     const drawPixelInfo = () => {
       try {
+        const container = document.getElementById(
+          "pixel-info-container"
+        ) as HTMLDivElement;
+        if (clipState.data.isUserSelected) {
+          container.style.visibility = "hidden";
+          return;
+        }
+
         const globalPoint = mousePointState.data;
         if (!globalPoint) return;
 
         const thisDisplayData = screenshotMetaState.data!;
-        const container = document.getElementById(
-          "mouse-info-container"
-        ) as HTMLDivElement;
         const clientPoint = coordTrans.globalToClient(
           globalPoint,
           { displayId: thisDisplayData.id },
@@ -374,25 +457,145 @@ function ScreenshotUI() {
   }, []);
 
   return (
-    <div
-      id="mouse-info-container"
-      style={{
-        visibility: "hidden",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        position: "relative",
-        fontSize: "12px",
-        zIndex: 10,
-        width: "100px",
-        backgroundColor: "rgba(43, 43, 43, 1)",
-        color: "whitesmoke",
+    <>
+      <div
+        id="pixel-info-container"
+        style={{
+          position: "absolute",
+          visibility: "hidden",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          fontSize: "12px",
+          zIndex: 10,
+          width: "100px",
+          backgroundColor: "rgba(43, 43, 43, 1)",
+          color: "whitesmoke",
+        }}
+      >
+        <img id="mouse-around-area-img" />
+        <div id="mouse-point-div" />
+        <div id="mouse-point-rgb-div" />
+        <div id="mouse-point-hex-div" />
+      </div>
+
+      {/* Tool bar rendering will be handle in onClipEnd function */}
+      <div
+        id="screenshot-tools-container"
+        style={{
+          visibility: "hidden",
+          cursor: "default",
+          position: "absolute",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 10,
+          backgroundColor: "var(--tool-bar-bg)",
+          borderRadius: "8px",
+          padding: `${STYLES_CONSTS.toolsContainerPaddingY}px ${STYLES_CONSTS.toolsContainerPaddingX}px`,
+        }}
+      >
+        <button
+          className="screenshot-tool-btn"
+          data-tooltip="Draw Line"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+          }}
+        >
+          <LineIcon />
+        </button>
+        <button
+          className="screenshot-tool-btn"
+          data-tooltip="Draw Rectangle"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+          }}
+        >
+          <RectIcon />
+        </button>
+
+        <div className="screenshot-tool-separator" />
+
+        <button
+          className="screenshot-tool-btn"
+          data-tooltip="Save"
+          onClick={async () => {
+            try {
+              const clippedImg = await getClippedImage("dataUrl");
+              if (!clippedImg) {
+                screenLogSignal.emit("Failed to get clipped image");
+                return;
+              }
+              const targetPath = await save({
+                defaultPath: `${Date.now()}.jpg`,
+                filters: [
+                  {
+                    name: "JPEG Image",
+                    extensions: ["jpg", "jpeg"],
+                  },
+                ],
+              });
+              if (!targetPath) return;
+              screenLogSignal.emit(`clipped image saved to: ${targetPath}`);
+              await writeFile(targetPath, dataUrlToBytes(clippedImg));
+              clipState.setState({
+                isClipping: false,
+                isUserSelected: false,
+              });
+              await invoke("clip_cancel");
+            } catch (error) {
+              screenLogSignal.emit(`Failed to save clipped image: ${error}`);
+            }
+          }}
+        >
+          <DownloadIcon />
+        </button>
+        <button
+          className="screenshot-tool-btn"
+          data-tooltip="Cancel"
+          onClick={async () => {
+            await invoke("clip_cancel");
+          }}
+        >
+          <CrossIcon />
+        </button>
+        <CopyToClipbordBtn />
+      </div>
+    </>
+  );
+}
+
+function CopyToClipbordBtn() {
+  const [loading, setLoading] = useState(false);
+
+  return (
+    <button
+      className="screenshot-tool-btn"
+      data-tooltip="Copy to clipboard"
+      disabled={loading}
+      onClick={async () => {
+        if (loading) return;
+
+        try {
+          setLoading(true);
+          const clippedImg = await getClippedImage("tauri-img");
+          if (!clippedImg) {
+            screenLogSignal.emit("Failed to get clipped image");
+            return;
+          }
+          await writeImage(clippedImg);
+          screenLogSignal.emit("Clipped image copied to clipboard");
+          await invoke("clip_cancel");
+        } catch (error) {
+          screenLogSignal.emit(`Failed to copy clipped image: ${error}`);
+        } finally {
+          setLoading(false);
+        }
       }}
     >
-      <img id="mouse-around-area-img" />
-      <div id="mouse-point-div" />
-      <div id="mouse-point-rgb-div" />
-      <div id="mouse-point-hex-div" />
-    </div>
+      {loading ? <DotSpinner /> : <CheckIcon />}
+    </button>
   );
 }
