@@ -63,18 +63,21 @@ async function getClippedImage(mode: "dataUrl" | "buffer" | "tauri-img") {
   }
   const screenshotRecord = screenshotsState.data;
   const screenshots = Object.values(screenshotRecord);
-  const canvas = document.createElement("canvas");
+
+  // create result canvas that will hold all screenshots
+  const resultCanvas = document.createElement("canvas");
   const desktopBounds = coordTrans.getDesktopBounds(
     screenshots.map(coordTrans.screenshotToDisplay)
   );
-  canvas.width = desktopBounds.width;
-  canvas.height = desktopBounds.height;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) {
+  resultCanvas.width = desktopBounds.width;
+  resultCanvas.height = desktopBounds.height;
+  const resultCanvasCtx = resultCanvas.getContext("2d");
+  if (!resultCanvasCtx) {
     screenLogSignal.emit("failed to get canvas context");
     throw new Error("Failed to get canvas context");
   }
 
+  // draw all screenshots in a single canvas
   const draw = (s: Screenshot) => {
     return new Promise<void>((resolve) => {
       const normalizedPoint = coordTrans.globalToNormalized(
@@ -84,7 +87,7 @@ async function getClippedImage(mode: "dataUrl" | "buffer" | "tauri-img") {
       const img = new Image();
       img.src = `data:image/jpeg;base64,${s.image_data}`;
       img.onload = () => {
-        ctx.drawImage(
+        resultCanvasCtx.drawImage(
           img,
           normalizedPoint.x,
           normalizedPoint.y,
@@ -99,6 +102,73 @@ async function getClippedImage(mode: "dataUrl" | "buffer" | "tauri-img") {
     await draw(s);
   }
 
+  // draw tools result to screenshot result canvas
+  const drawnResults = drawnToolState.data;
+  for (const toolResult of drawnResults) {
+    switch (toolResult.tool) {
+      case "line": {
+        const data = toolResult.data as ClipToolLineData;
+        resultCanvasCtx.save();
+
+        resultCanvasCtx.lineWidth = data.lineWidth;
+        resultCanvasCtx.strokeStyle = data.strokeStyle;
+        const normalizedStartP = coordTrans.globalToNormalized(
+          data.startPoint!,
+          displaysState.data
+        );
+        const normalizedEndP = coordTrans.globalToNormalized(
+          data.endPoint!,
+          displaysState.data
+        );
+        screenLogSignal.emit(
+          `drew line from ${normalizedStartP.x},${normalizedStartP.y} to ${
+            normalizedEndP.x
+          },${normalizedEndP.y}.
+          global: ${data.startPoint!.x},${data.startPoint!.y} to ${
+            data.endPoint!.x
+          },${data.endPoint!.y}
+          `
+        );
+
+        resultCanvasCtx.beginPath();
+        resultCanvasCtx.moveTo(normalizedStartP.x, normalizedStartP.y);
+        resultCanvasCtx.lineTo(normalizedEndP.x, normalizedEndP.y);
+        resultCanvasCtx.stroke();
+        resultCanvasCtx.closePath();
+
+        resultCanvasCtx.restore();
+        break;
+      }
+      case "rect": {
+        const data = toolResult.data as ClipToolRectData;
+        resultCanvasCtx.save();
+
+        resultCanvasCtx.lineWidth = data.lineWidth;
+        resultCanvasCtx.strokeStyle = data.strokeStyle;
+        const normalizedStartP = coordTrans.globalToNormalized(
+          data.startPoint!,
+          displaysState.data
+        );
+        const normalizedEndP = coordTrans.globalToNormalized(
+          data.endPoint!,
+          displaysState.data
+        );
+        const area = detectArea(normalizedStartP, normalizedEndP);
+        if (!area) {
+          resultCanvasCtx.restore();
+          return;
+        }
+
+        resultCanvasCtx.strokeRect(area.x, area.y, area.width, area.height);
+        resultCanvasCtx.restore();
+        break;
+      }
+      default: {
+        break;
+      }
+    }
+  }
+
   const clipCanvas = document.createElement("canvas");
   clipCanvas.width = clipArea.width;
   clipCanvas.height = clipArea.height;
@@ -109,7 +179,7 @@ async function getClippedImage(mode: "dataUrl" | "buffer" | "tauri-img") {
   }
 
   clipCtx.drawImage(
-    canvas,
+    resultCanvas,
     clipArea.x,
     clipArea.y,
     clipArea.width,
