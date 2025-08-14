@@ -356,9 +356,6 @@ function handleInvokeClipToolStart(): boolean {
         return true;
       }
     }
-    // invoke("clip_tool_start", {
-    //   payload: JSON.stringify(payload),
-    // });
     TauriBroadcast.broadcast("clip-tool-start", payload);
     return true;
   }
@@ -404,9 +401,6 @@ function handleInvokeClipToolEnd(): boolean {
         return true;
       }
     }
-    // invoke("clip_tool_end", {
-    //   payload: JSON.stringify(payload),
-    // });
     TauriBroadcast.broadcast("clip-tool-end", payload);
     return true;
   }
@@ -472,7 +466,6 @@ export function ClipOverlay() {
       }
       const needReturn = handleInvokeClipToolStart();
       if (needReturn) return;
-      // invoke("clip_start");
       TauriBroadcast.broadcast("clip-start");
     };
     const handleMouseUp = (e: MouseEvent) => {
@@ -481,7 +474,6 @@ export function ClipOverlay() {
       }
       const needReturn = handleInvokeClipToolEnd();
       if (needReturn) return;
-      // invoke("clip_end", { displayId: screenshotMetaState.data!.id });
       TauriBroadcast.broadcast("clip-end", {
         displayId: screenshotMetaState.data!.id,
       });
@@ -811,7 +803,6 @@ function ScreenshotUI() {
               });
               if (!targetPath) return;
               await writeFile(targetPath, dataUrlToBytes(clippedImg));
-              // await invoke("clip_cancel");
               TauriBroadcast.broadcast("clip-cancel");
             } catch (error) {
               screenLogSignal.emit(`Failed to save clipped image: ${error}`);
@@ -824,7 +815,6 @@ function ScreenshotUI() {
           className="clip-tool-btn clip-tool-btn-tip"
           data-tooltip="Cancel"
           onClick={async () => {
-            // await invoke("clip_cancel");
             TauriBroadcast.broadcast("clip-cancel");
           }}
         >
@@ -1181,7 +1171,6 @@ function CopyToClipboardBtn() {
             return;
           }
           await writeImage(clippedImg);
-          // await invoke("clip_cancel");
           await TauriBroadcast.broadcast("clip-cancel");
         } catch (error) {
           screenLogSignal.emit(`Failed to copy clipped image: ${error}`);
