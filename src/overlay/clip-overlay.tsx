@@ -40,6 +40,8 @@ import { listen } from "@tauri-apps/api/event";
 const STYLES_CONSTS = {
   toolsContainerPaddingX: 4,
   toolsContainerPaddingY: 4,
+  toolSettingsContainerSpacing: 4,
+  overflowPadding: 8,
 };
 
 function dataUrlToBytes(dataUrl: string): Uint8Array {
@@ -312,12 +314,62 @@ function visibleToolsContainer() {
   ) as HTMLDivElement;
   const toolsContainerRect = toolsContainer.getBoundingClientRect();
   toolsContainer.style.visibility = "visible";
-  const containerPos = {
+
+  const toolSettingsContainer = document.getElementById(
+    "clip-tool-settings-container"
+  ) as HTMLDivElement;
+  const toolSettingsContainerRect =
+    toolSettingsContainer.getBoundingClientRect();
+
+  const containerLeftTop: Point = {
     x: clipArea.x + clipArea.width - toolsContainerRect.width,
-    y: clipArea.y + clipArea.height + 10,
+    y: clipArea.y + clipArea.height + STYLES_CONSTS.overflowPadding,
   };
-  toolsContainer.style.left = `${containerPos.x}px`;
-  toolsContainer.style.top = `${containerPos.y}px`;
+  if (containerLeftTop.x < 0) {
+    containerLeftTop.x = STYLES_CONSTS.overflowPadding;
+  }
+  if (containerLeftTop.y < 0) {
+    containerLeftTop.y = STYLES_CONSTS.overflowPadding;
+  }
+  if (containerLeftTop.x + toolsContainerRect.width > window.innerWidth) {
+    containerLeftTop.x = window.innerWidth - toolsContainerRect.width;
+  }
+  if (
+    containerLeftTop.y +
+      toolsContainerRect.height +
+      toolSettingsContainerRect.height +
+      STYLES_CONSTS.toolSettingsContainerSpacing >
+    window.innerHeight
+  ) {
+    // 如果下面展示不下, 那么尝试放到选区上面
+    const positionOnTopY =
+      clipArea.y - toolsContainerRect.height - STYLES_CONSTS.overflowPadding;
+    if (positionOnTopY - toolSettingsContainerRect.height > 0) {
+      containerLeftTop.y = positionOnTopY;
+    } else {
+      // 如果上面也展示不下, 例如截取整个高度, 那么放到选取里的右下角
+      containerLeftTop.y =
+        clipArea.y +
+        clipArea.height -
+        toolsContainerRect.height -
+        STYLES_CONSTS.overflowPadding;
+      containerLeftTop.x =
+        clipArea.x +
+        clipArea.width -
+        toolsContainerRect.width -
+        STYLES_CONSTS.overflowPadding;
+    }
+    // 放到上面和选区里的右下角时
+    // 设置 popup-placement 给 settings-container 并提前返回
+    toolSettingsContainer.setAttribute("popup-placement", "top");
+    toolsContainer.style.left = `${containerLeftTop.x}px`;
+    toolsContainer.style.top = `${containerLeftTop.y}px`;
+    return;
+  }
+  // 其他情况则设置弹出到底部
+  toolSettingsContainer.setAttribute("popup-placement", "bottom");
+  toolsContainer.style.left = `${containerLeftTop.x}px`;
+  toolsContainer.style.top = `${containerLeftTop.y}px`;
 }
 
 function isMouseInsideUI(e: MouseEvent): boolean {
@@ -687,18 +739,23 @@ function ScreenshotUI() {
         aroundAreaImg.height = scaledCanvasWH.height;
 
         container.style.width = `${scaledCanvasWH.width}px`;
-        let containerLeft = clientPoint.x + 10;
-        let containerTop = clientPoint.y + 10;
+        let containerLeft = clientPoint.x + STYLES_CONSTS.overflowPadding;
+        let containerTop = clientPoint.y + STYLES_CONSTS.overflowPadding;
         let containerRight = containerLeft + scaledCanvasWH.width;
         let containerBottom =
           containerTop + container.getBoundingClientRect().height;
 
         if (containerRight > window.innerWidth) {
-          containerLeft = clientPoint.x - scaledCanvasWH.width - 10;
+          containerLeft =
+            clientPoint.x -
+            scaledCanvasWH.width -
+            STYLES_CONSTS.overflowPadding;
         }
         if (containerBottom > window.innerHeight) {
           containerTop =
-            clientPoint.y - container.getBoundingClientRect().height - 10;
+            clientPoint.y -
+            container.getBoundingClientRect().height -
+            STYLES_CONSTS.overflowPadding;
         }
 
         container.style.left = `${containerLeft}px`;
@@ -751,6 +808,7 @@ function ScreenshotUI() {
           backgroundColor: "var(--toolbar-bg)",
           borderRadius: "8px",
           padding: `${STYLES_CONSTS.toolsContainerPaddingY}px ${STYLES_CONSTS.toolsContainerPaddingX}px`,
+          boxShadow: "0px 0px 15px -5px #000000",
         }}
       >
         <ToolBtn
@@ -1046,7 +1104,7 @@ function ToolSettings() {
       ) as HTMLDivElement;
       const clipToolsContainer = document.getElementById(
         "clip-tools-container"
-      );
+      ) as HTMLDivElement;
       if (
         data.currentTool &&
         clipToolsContainer?.style.visibility === "visible"
@@ -1073,15 +1131,31 @@ function ToolSettings() {
             2
           )}`
         );
-        settingsContainer.style.left = `${
-          toolBtnRect.left - STYLES_CONSTS.toolsContainerPaddingX
-        }px`;
-        settingsContainer.style.top = `${
-          toolBtnRect.top +
-          toolBtnRect.height +
-          STYLES_CONSTS.toolsContainerPaddingY +
-          4
-        }px`;
+        const popupPlacement =
+          settingsContainer.getAttribute("popup-placement");
+        const clipToolsContainerRect =
+          clipToolsContainer.getBoundingClientRect();
+        const settingsContainerRect = settingsContainer.getBoundingClientRect();
+        let left = toolBtnRect.left - STYLES_CONSTS.toolsContainerPaddingX;
+        if (left + settingsContainerRect.width > window.innerWidth) {
+          left = window.innerWidth - settingsContainerRect.width;
+        }
+        if (popupPlacement === "top") {
+          let top =
+            clipToolsContainerRect.top -
+            settingsContainerRect.height -
+            STYLES_CONSTS.toolSettingsContainerSpacing;
+
+          settingsContainer.style.left = `${left}px`;
+          settingsContainer.style.top = `${top}px`;
+        } else {
+          let top =
+            clipToolsContainerRect.bottom +
+            STYLES_CONSTS.toolSettingsContainerSpacing;
+
+          settingsContainer.style.left = `${left}px`;
+          settingsContainer.style.top = `${top}px`;
+        }
       } else {
         const otherBtns = ClipToolHelper.getOtherToolElems(data.currentTool);
         otherBtns.forEach((btn) => {
@@ -1104,7 +1178,9 @@ function ToolSettings() {
       case "rect":
         return <RectToolSettings />;
       default:
-        return null;
+        // 默认回复一个占位符, 用来显示 tools container 是计算位置用到
+        // 这里约定每个 tool settings 的高度都一样, 并且只有一行 (宽度无所谓)
+        return <LineToolSettings />;
     }
   };
 
@@ -1121,6 +1197,7 @@ function ToolSettings() {
         borderRadius: "8px",
         backgroundColor: "var(--toolbar-bg)",
         padding: `${STYLES_CONSTS.toolsContainerPaddingY}px ${STYLES_CONSTS.toolsContainerPaddingX}px`,
+        boxShadow: "0px 0px 15px -5px #000000",
       }}
     >
       {contents()}
