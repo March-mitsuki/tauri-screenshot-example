@@ -1,0 +1,148 @@
+/* Reset and base styles */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #333;
+}
+
+#root {
+  width: 100%;
+  max-width: 600px;
+  padding: 20px;
+}
+
+/* Main container styles */
+.main-container {
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(10px);
+  border-radius: 20px;
+  padding: 40px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+  text-align: center;
+  transition: transform 0.3s ease;
+}
+
+.main-container:hover {
+  transform: translateY(-5px);
+}
+
+/* Typography */
+h1 {
+  font-size: 2.5rem;
+  font-weight: 700;
+  color: #2d3748;
+  margin-bottom: 20px;
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.subtitle {
+  font-size: 1.2rem;
+  color: #4a5568;
+  margin-bottom: 30px;
+  line-height: 1.6;
+}
+
+/* Keyboard shortcut display */
+.shortcut-display {
+  background: linear-gradient(135deg, #4299e1, #3182ce);
+  color: white;
+  padding: 15px 25px;
+  border-radius: 12px;
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin: 20px 0;
+  box-shadow: 0 8px 25px rgba(66, 153, 225, 0.3);
+  letter-spacing: 0.5px;
+}
+
+/* GitHub section */
+.github-section {
+  margin-top: 40px;
+  padding: 25px;
+  background: rgba(247, 250, 252, 0.8);
+  border-radius: 15px;
+  border: 2px solid rgba(226, 232, 240, 0.5);
+}
+
+.github-section p {
+  color: #4a5568;
+  font-size: 1rem;
+  line-height: 1.6;
+}
+
+/* GitHub link styles */
+.github-link {
+  color: #3182ce;
+  text-decoration: none;
+  font-weight: 600;
+  position: relative;
+  transition: all 0.3s ease;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+
+.github-link:hover {
+  color: #2c5aa0;
+  background: rgba(49, 130, 206, 0.1);
+  transform: translateY(-1px);
+}
+
+.github-link::after {
+  content: "";
+  position: absolute;
+  width: 100%;
+  height: 2px;
+  bottom: -2px;
+  left: 0;
+  background: linear-gradient(135deg, #4299e1, #3182ce);
+  transform: scaleX(0);
+  transition: transform 0.3s ease;
+}
+
+.github-link:hover::after {
+  transform: scaleX(1);
+}
+
+/* Icon styles */
+.screenshot-icon {
+  font-size: 4rem;
+  margin-bottom: 20px;
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .main-container {
+    padding: 30px 20px;
+    margin: 20px;
+  }
+
+  h1 {
+    font-size: 2rem;
+  }
+
+  .subtitle {
+    font-size: 1.1rem;
+  }
+
+  .shortcut-display {
+    font-size: 1rem;
+    padding: 12px 20px;
+  }
+}

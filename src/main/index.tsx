@@ -1,26 +1,38 @@
 import ReactDOM from "react-dom/client";
-import { displaysState } from "../overlay/clip-state";
-import { useEffect } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { Display } from "../overlay/cord-trans";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import "./index.css";
 
 function Main() {
-  useEffect(() => {
-    invoke("get_displays_data").then((data) => {
-      displaysState.setState(data as Display[]);
-    });
-  }, []);
-
   return (
-    <div>
-      <h1>Hello, world!</h1>
-      <button
-        onClick={() => {
-          console.log(displaysState.data);
-        }}
-      >
-        get displays data
-      </button>
+    <div className="main-container">
+      <div className="screenshot-icon">📸</div>
+      <h1>Tauri screenshot example</h1>
+      <p className="subtitle">
+        A screenshot tool example with a good multi-display support.
+      </p>
+
+      <div className="shortcut-display">
+        Press Cmd + Shift + S to take a screenshot <br />
+        (or Ctrl + Shift + S on Windows)
+      </div>
+
+      <div className="github-section">
+        <p>
+          If this project is useful to you, please consider giving it a star on{" "}
+          <a
+            className="github-link"
+            href="https://github.com/March-mitsuki/tauri-screenshot-example"
+            onClick={(e) => {
+              e.preventDefault();
+              openUrl(
+                "https://github.com/March-mitsuki/tauri-screenshot-example"
+              );
+            }}
+          >
+            GitHub ⭐
+          </a>{" "}
+        </p>
+      </div>
     </div>
   );
 }
