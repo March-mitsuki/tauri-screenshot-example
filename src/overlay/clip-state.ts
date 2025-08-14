@@ -1,5 +1,6 @@
 import { State } from "../common/state";
-import { Display, Point } from "./cord-trans";
+import { detectArea } from "./_shared";
+import coordTrans, { Display, Point } from "./cord-trans";
 
 export type Screenshot = {
   id: number;
@@ -127,5 +128,59 @@ export class ClipToolHelper {
   }
   static getDefaultLineWidth(): number {
     return 2;
+  }
+
+  static clearCanvas(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement) {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+  }
+  static drawLine(ctx: CanvasRenderingContext2D, data: ClipToolLineData) {
+    ctx.save();
+
+    ctx.lineWidth = data.lineWidth;
+    ctx.strokeStyle = data.strokeStyle;
+    const clientStartP = coordTrans.globalToClient(
+      data.startPoint!,
+      { displayId: screenshotMetaState.data!.id },
+      displaysState.data
+    );
+    // 如果有 data.endPoint 说明已经绘制完成, 使用 data.endPoint 绘制结果
+    // 如果没有则使用当前鼠标位置实时显示绘制结果
+    const globalEndP = data.endPoint || mousePointState.data!;
+    const clientEndP = coordTrans.globalToClient(
+      globalEndP,
+      { displayId: screenshotMetaState.data!.id },
+      displaysState.data
+    );
+
+    ctx.beginPath();
+    ctx.moveTo(clientStartP.x, clientStartP.y);
+    ctx.lineTo(clientEndP.x, clientEndP.y);
+    ctx.stroke();
+    ctx.closePath();
+    ctx.restore();
+  }
+  static drawRect(ctx: CanvasRenderingContext2D, data: ClipToolRectData) {
+    ctx.save();
+
+    ctx.lineWidth = data.lineWidth;
+    ctx.strokeStyle = data.strokeStyle;
+    const clientStartP = coordTrans.globalToClient(
+      data.startPoint!,
+      { displayId: screenshotMetaState.data!.id },
+      displaysState.data
+    );
+    const globalEndP = data.endPoint || mousePointState.data!;
+    const clientEndP = coordTrans.globalToClient(
+      globalEndP,
+      { displayId: screenshotMetaState.data!.id },
+      displaysState.data
+    );
+    const area = detectArea(clientStartP, clientEndP);
+    if (!area) {
+      ctx.restore();
+      return;
+    }
+    ctx.strokeRect(area.x, area.y, area.width, area.height);
+    ctx.restore();
   }
 }

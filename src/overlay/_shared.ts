@@ -165,3 +165,25 @@ export function rgbToHex(rgb: RGB): string {
   };
   return `#${toHex(rgb.r)}${toHex(rgb.g)}${toHex(rgb.b)}`;
 }
+
+/**
+ * Detects the area between two points.
+ * @param start Start Point
+ * @param end End Point
+ * @returns Area2D or undefined
+ */
+export function detectArea(
+  start?: { x: number; y: number },
+  end?: { x: number; y: number }
+): Area2D | undefined {
+  if (!start || !end) return undefined;
+
+  const x = Math.min(start.x, end.x);
+  const y = Math.min(start.y, end.y);
+  const width = Math.abs(start.x - end.x);
+  const height = Math.abs(start.y - end.y);
+
+  if (width < 2 || height < 2) return undefined;
+
+  return { x, y, width, height };
+}

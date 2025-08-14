@@ -17,10 +17,11 @@ import {
   ClipToolLineData,
   ClipToolHelper,
   ClipToolRectData,
+  drawnToolState,
 } from "./clip-state";
 import { ScreenLogRenderer, screenLogSignal } from "../components/screen-log";
 import {
-  Area2D,
+  detectArea,
   drawGrayOverlay,
   getMouseAroundArea,
   rgbToHex,
@@ -40,22 +41,6 @@ const STYLES_CONSTS = {
   toolsContainerPaddingY: 4,
 };
 
-function detectClipArea(
-  start?: { x: number; y: number },
-  end?: { x: number; y: number }
-): Area2D | undefined {
-  if (!start || !end) return undefined;
-
-  const x = Math.min(start.x, end.x);
-  const y = Math.min(start.y, end.y);
-  const width = Math.abs(start.x - end.x);
-  const height = Math.abs(start.y - end.y);
-
-  if (width < 2 || height < 2) return undefined;
-
-  return { x, y, width, height };
-}
-
 function dataUrlToBytes(dataUrl: string): Uint8Array {
   const base64 = dataUrl.split(",")[1];
   const bin = atob(base64);
@@ -68,7 +53,7 @@ async function getClippedImage(mode: "dataUrl"): Promise<string>;
 async function getClippedImage(mode: "buffer"): Promise<ArrayBuffer>;
 async function getClippedImage(mode: "tauri-img"): Promise<TauriImage>;
 async function getClippedImage(mode: "dataUrl" | "buffer" | "tauri-img") {
-  const clipArea = detectClipArea(
+  const clipArea = detectArea(
     clipState.data.startPointGlobalNotNormalized,
     clipState.data.endPointGlobalNotNormalized
   );
@@ -199,7 +184,7 @@ function setClipEndState() {
       globalPoint,
       displaysState.data
     );
-    const clipArea = detectClipArea(prev.startPoint, clientEndP);
+    const clipArea = detectArea(prev.startPoint, clientEndP);
     return {
       ...prev,
       isClipping: false,
@@ -211,7 +196,7 @@ function setClipEndState() {
 }
 
 function onClipEnd() {
-  const clipArea = detectClipArea(
+  const clipArea = detectArea(
     clipState.data.startPoint,
     clipState.data.endPoint
   );
@@ -261,31 +246,6 @@ function isMouseInsideUI(e: MouseEvent): boolean {
   }
   return false;
 }
-
-// function handleClipToolStart(paylod: ClipToolStateData) {
-//   const screenshotCanvas = document.getElementById(
-//     "screenshot-canvas"
-//   ) as HTMLCanvasElement;
-//   if (!screenshotCanvas) return;
-
-//   const ctx = screenshotCanvas.getContext("2d");
-//   if (!ctx) return;
-
-//   switch (paylod.tool) {
-//     case "line": {
-//       const data = paylod.data as ClipToolLineData;
-//       clipToolState.setState({
-//         tool: "line",
-//         data: {},
-//       });
-//       break;
-//     }
-//     default:
-//       break;
-//   }
-// }
-
-// function handleClipToolEnd(paylod: ClipToolStateData) {}
 
 /**
  * 如果有需要就 invoke clip_tool_start 事件
@@ -409,19 +369,32 @@ listen("clip-tool-start", (e) => {
   const data = JSON.parse(e.payload as string) as ClipToolStateData;
   clipToolState.setState(data);
   screenLogSignal.emit(`
-    Tool started: ${data.tool}
+    Tool started: ${data.tool}, ${JSON.stringify(data, null, 2)}
   `);
 });
 listen("clip-tool-end", (e) => {
   // handleClipToolEnd(JSON.parse(e.payload as string));
   const data = JSON.parse(e.payload as string) as ClipToolStateData;
-  clipToolState.setState((prev) => ({
-    ...prev,
-    ...data,
-  }));
-  screenLogSignal.emit(`
-    Tool ended: ${data.tool}, ${JSON.stringify(data, null, 2)}
-  `);
+  clipToolState.setState((prev) => {
+    const newState = {
+      tool: data.tool,
+      data: {
+        ...prev.data,
+        ...data.data,
+      },
+    } as ClipToolStateData;
+    screenLogSignal.emit(
+      `Tool ended: ${data.tool}, new: ${JSON.stringify(newState, null, 2)}`
+    );
+    drawnToolState.setState((prev) => [
+      ...prev,
+      {
+        tool: newState.tool!,
+        data: newState.data!,
+      },
+    ]);
+    return newState;
+  });
 });
 
 export function ClipOverlay() {
@@ -449,7 +422,7 @@ export function ClipOverlay() {
         const clipData = clipState.data;
         if (!clipData) return;
 
-        const area = detectClipArea(clipData.startPoint, clipData.endPoint);
+        const area = detectArea(clipData.startPoint, clipData.endPoint);
         const selection = document.getElementById(
           "clip-selection"
         ) as HTMLDivElement;
@@ -479,9 +452,7 @@ export function ClipOverlay() {
           ) as HTMLCanvasElement;
           const ctx = clipToolCanvas.getContext("2d");
           if (!ctx) {
-            screenLogSignal.emit(
-              "[error] Failed to get clip tool canvas context"
-            );
+            screenLogSignal.emit("Failed to get clip-tool-tmp-canvas context");
             return;
           }
           // 如果有设置 tool 那么根据 tool 检查 data 查看是否已经开始绘图
@@ -490,61 +461,28 @@ export function ClipOverlay() {
               const data = clipToolState.data.data as ClipToolLineData;
               // 如果只有 startPoint 没有 endPoint 表示正在绘制中
               if (data.startPoint && !data.endPoint) {
-                // 清空上一次绘制的结果
-                ctx.clearRect(
-                  0,
-                  0,
-                  clipToolCanvas.width,
-                  clipToolCanvas.height
-                );
-                ctx.strokeStyle = data.strokeStyle;
-                ctx.lineWidth = data.lineWidth;
-                const clientStartP = coordTrans.globalToClient(
-                  data.startPoint!,
-                  { displayId: screenshotMetaState.data!.id },
-                  displaysState.data
-                );
-                const clientEndP = coordTrans.globalToClient(
-                  mousePointState.data!,
-                  { displayId: screenshotMetaState.data!.id },
-                  displaysState.data
-                );
-
-                ctx.beginPath();
-                ctx.moveTo(clientStartP.x, clientStartP.y);
-                ctx.lineTo(clientEndP.x, clientEndP.y);
-                ctx.stroke();
-
+                ClipToolHelper.clearCanvas(ctx, clipToolCanvas);
+                ClipToolHelper.drawLine(ctx, data);
+                break;
+              }
+              // 如果两个都有则表示绘制结束
+              if (data.startPoint && data.endPoint) {
+                ClipToolHelper.clearCanvas(ctx, clipToolCanvas);
                 break;
               }
               break;
             }
             case "rect": {
               const data = clipToolState.data.data as ClipToolRectData;
+              // 绘制中
               if (data.startPoint && !data.endPoint) {
-                ctx.clearRect(
-                  0,
-                  0,
-                  clipToolCanvas.width,
-                  clipToolCanvas.height
-                );
-                ctx.strokeStyle = data.strokeStyle;
-                ctx.lineWidth = data.lineWidth;
-                const clientStartP = coordTrans.globalToClient(
-                  data.startPoint!,
-                  { displayId: screenshotMetaState.data!.id },
-                  displaysState.data
-                );
-                const clientEndP = coordTrans.globalToClient(
-                  mousePointState.data!,
-                  { displayId: screenshotMetaState.data!.id },
-                  displaysState.data
-                );
-
-                const area = detectClipArea(clientStartP, clientEndP);
-                if (area) {
-                  ctx.strokeRect(area.x, area.y, area.width, area.height);
-                }
+                ClipToolHelper.clearCanvas(ctx, clipToolCanvas);
+                ClipToolHelper.drawRect(ctx, data);
+                break;
+              }
+              // 绘制结束
+              if (data.startPoint && data.endPoint) {
+                ClipToolHelper.clearCanvas(ctx, clipToolCanvas);
                 break;
               }
               break;

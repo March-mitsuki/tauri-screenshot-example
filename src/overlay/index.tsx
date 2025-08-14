@@ -6,7 +6,12 @@ import { useEffect, useState } from "react";
 import ReactDOM from "react-dom/client";
 import { ClipOverlay } from "./clip-overlay";
 import {
+  ClipToolHelper,
+  ClipToolLineData,
+  ClipToolRectData,
   displaysState,
+  drawnToolState,
+  DrawnToolStateData,
   Screenshot,
   screenshotMetaState,
   screenshotsState,
@@ -14,6 +19,7 @@ import {
 import { Display } from "./cord-trans";
 import { listen } from "@tauri-apps/api/event";
 import { drawScreenshot } from "./_shared";
+import { screenLogSignal } from "../components/screen-log";
 
 listen("clip-cancel", async () => {
   const webviewWindow = getCurrentWebviewWindow();
@@ -52,13 +58,46 @@ function Overlay() {
         await invoke("clip_cancel");
       }
     };
+    const listenDrawnToolState = (state: DrawnToolStateData) => {
+      if (state.length < 1) return;
+      screenLogSignal.emit(`Tool drawn:\n ${JSON.stringify(state, null, 2)}`);
+      const drawnCanvas = document.getElementById(
+        "clip-tool-drawn-canvas"
+      ) as HTMLCanvasElement;
+      const ctx = drawnCanvas.getContext("2d");
+      if (!ctx) {
+        screenLogSignal.emit("Failed to get clip-tool-drawn-canvas context");
+        return;
+      }
+
+      ClipToolHelper.clearCanvas(ctx, drawnCanvas);
+      for (const toolResult of state) {
+        switch (toolResult.tool) {
+          case "line": {
+            const data = toolResult.data as ClipToolLineData;
+            ClipToolHelper.drawLine(ctx, data);
+            break;
+          }
+          case "rect": {
+            const data = toolResult.data as ClipToolRectData;
+            ClipToolHelper.drawRect(ctx, data);
+            break;
+          }
+          default: {
+            break;
+          }
+        }
+      }
+    };
 
     getScreenshot();
     getAllDisplays();
     window.addEventListener("keydown", listenForKeyDown);
+    drawnToolState.subscribe(listenDrawnToolState);
 
     return () => {
       window.removeEventListener("keydown", listenForKeyDown);
+      drawnToolState.unsubscribe(listenDrawnToolState);
     };
   }, []);
 
@@ -69,11 +108,21 @@ function Overlay() {
     const canvas = document.getElementById(
       "screenshot-canvas"
     ) as HTMLCanvasElement;
+
+    // 初始化 clip-tool-tmp-canvas
     const clipToolCanvas = document.getElementById(
       "clip-tool-tmp-canvas"
     ) as HTMLCanvasElement;
     clipToolCanvas.width = screenshot.width;
     clipToolCanvas.height = screenshot.height;
+
+    // 初始化 clip-tool-drawn-canvas
+    const drawnCanvas = document.getElementById(
+      "clip-tool-drawn-canvas"
+    ) as HTMLCanvasElement;
+    drawnCanvas.width = screenshot.width;
+    drawnCanvas.height = screenshot.height;
+
     const tasks = [
       webviewWindow.setDecorations(false),
       webviewWindow.setPosition(
@@ -118,6 +167,16 @@ function Overlay() {
       {/* 实时显示当前 tool 绘制结果的的临时画布 */}
       <canvas
         id="clip-tool-tmp-canvas"
+        style={{
+          position: "absolute",
+          left: 0,
+          top: 0,
+          zIndex: 10,
+        }}
+      />
+      {/* 显示绘制完成的 tool 绘制结果 */}
+      <canvas
+        id="clip-tool-drawn-canvas"
         style={{
           position: "absolute",
           left: 0,
