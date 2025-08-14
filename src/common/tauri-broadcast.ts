@@ -12,7 +12,7 @@ type BroadcastEvent = {
   // displayId 是最终右下角坐标所在的显示器的 ID
   "clip-end-current-display": { displayId: number; globalRightBottom: Point };
   "clip-cancel": undefined;
-  "clip-tool-select": ClipToolStateData & { displayId: number };
+  "clip-tool-select": ClipToolStateData;
   "clip-tool-start": ClipToolStateData;
   "clip-tool-end": ClipToolStateData;
 };

@@ -479,9 +479,6 @@ TauriBroadcast.listen("clip-end-current-display", (data) => {
   visibleToolsContainer();
 });
 TauriBroadcast.listen("clip-tool-select", (data) => {
-  if (data.displayId !== screenshotMetaState.data?.id) {
-    return;
-  }
   clipToolState.setState({
     currentTool: data.currentTool,
     toolData: data.toolData,
@@ -939,18 +936,28 @@ function LineToolSettings() {
   }, []);
 
   const setLineWidth = (width: number) => {
-    clipToolState.setState((prev) => {
-      return {
-        ...prev,
-        toolData: {
-          ...prev.toolData,
-          line: {
-            ...prev.toolData.line,
-            lineWidth: width,
-          },
+    TauriBroadcast.broadcast("clip-tool-select", {
+      currentTool: "line",
+      toolData: {
+        ...clipToolState.data.toolData,
+        line: {
+          ...clipToolState.data.toolData.line,
+          lineWidth: width,
         },
-      };
+      },
     });
+    // clipToolState.setState((prev) => {
+    //   return {
+    //     ...prev,
+    //     toolData: {
+    //       ...prev.toolData,
+    //       line: {
+    //         ...prev.toolData.line,
+    //         lineWidth: width,
+    //       },
+    //     },
+    //   };
+    // });
   };
 
   return (
@@ -986,18 +993,27 @@ function LineToolSettings() {
         onChange={(e) => {
           const color = e.currentTarget.value;
           if (color) {
-            screenLogSignal.emit(`line tool color changed: ${color}`);
-            clipToolState.setState((prev) => {
-              return {
-                ...prev,
-                toolData: {
-                  ...prev.toolData,
-                  line: {
-                    ...prev.toolData.line,
-                    strokeStyle: color,
-                  },
+            // clipToolState.setState((prev) => {
+            //   return {
+            //     ...prev,
+            //     toolData: {
+            //       ...prev.toolData,
+            //       line: {
+            //         ...prev.toolData.line,
+            //         strokeStyle: color,
+            //       },
+            //     },
+            //   };
+            // });
+            TauriBroadcast.broadcast("clip-tool-select", {
+              currentTool: "line",
+              toolData: {
+                ...clipToolState.data.toolData,
+                line: {
+                  ...clipToolState.data.toolData.line,
+                  strokeStyle: color,
                 },
-              };
+              },
             });
           }
         }}
@@ -1025,17 +1041,27 @@ function RectToolSettings() {
   }, []);
 
   const setLineWidth = (width: number) => {
-    clipToolState.setState((prev) => {
-      return {
-        ...prev,
-        toolData: {
-          ...prev.toolData,
-          rect: {
-            ...prev.toolData.rect,
-            lineWidth: width,
-          },
+    // clipToolState.setState((prev) => {
+    //   return {
+    //     ...prev,
+    //     toolData: {
+    //       ...prev.toolData,
+    //       rect: {
+    //         ...prev.toolData.rect,
+    //         lineWidth: width,
+    //       },
+    //     },
+    //   };
+    // });
+    TauriBroadcast.broadcast("clip-tool-select", {
+      currentTool: "rect",
+      toolData: {
+        ...clipToolState.data.toolData,
+        rect: {
+          ...clipToolState.data.toolData.rect,
+          lineWidth: width,
         },
-      };
+      },
     });
   };
 
@@ -1072,17 +1098,27 @@ function RectToolSettings() {
         onChange={(e) => {
           const color = e.currentTarget.value;
           if (color) {
-            clipToolState.setState((prev) => {
-              return {
-                ...prev,
-                toolData: {
-                  ...prev.toolData,
-                  rect: {
-                    ...prev.toolData.rect,
-                    strokeStyle: color,
-                  },
+            // clipToolState.setState((prev) => {
+            //   return {
+            //     ...prev,
+            //     toolData: {
+            //       ...prev.toolData,
+            //       rect: {
+            //         ...prev.toolData.rect,
+            //         strokeStyle: color,
+            //       },
+            //     },
+            //   };
+            // });
+            TauriBroadcast.broadcast("clip-tool-select", {
+              currentTool: "rect",
+              toolData: {
+                ...clipToolState.data.toolData,
+                rect: {
+                  ...clipToolState.data.toolData.rect,
+                  strokeStyle: color,
                 },
-              };
+              },
             });
           }
         }}
@@ -1222,7 +1258,6 @@ function ToolBtn({ name, tooltip, children, onClick }: ToolBtnProps) {
         const data = await onClick(requestSelect);
         TauriBroadcast.broadcast("clip-tool-select", {
           ...data,
-          displayId: screenshotMetaState.data!.id,
         });
       }}
     >
