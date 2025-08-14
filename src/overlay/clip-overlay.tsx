@@ -6,12 +6,16 @@ import { save } from "@tauri-apps/plugin-dialog";
 import { writeFile } from "@tauri-apps/plugin-fs";
 import coordTrans, { Point } from "./cord-trans";
 import {
+  clipToolState,
+  ClipToolStateData,
   clipState,
   displaysState,
   mousePointState,
   Screenshot,
   screenshotMetaState,
   screenshotsState,
+  ClipToolLineData,
+  ClipToolHelper,
 } from "./clip-state";
 import { ScreenLogRenderer, screenLogSignal } from "../components/screen-log";
 import {
@@ -26,7 +30,7 @@ import {
   DownloadIcon,
   LineIcon,
   RectIcon,
-} from "../components/icons/line";
+} from "../components/icons";
 import { writeImage } from "@tauri-apps/plugin-clipboard-manager";
 import { DotSpinner } from "../components/dot-spinner";
 
@@ -158,8 +162,12 @@ async function getClippedImage(mode: "dataUrl" | "buffer" | "tauri-img") {
 function setClipStartState() {
   const globalPoint = mousePointState.data;
   if (!globalPoint) return;
-  const toolsContainer = document.getElementById("screenshot-tools-container");
+  const toolsContainer = document.getElementById("clip-tools-container");
   toolsContainer!.style.visibility = "hidden";
+  clipToolState.setState((prev) => ({
+    ...prev,
+    tool: undefined,
+  }));
   clipState.setState({
     isClipping: true,
     isUserSelected: false,
@@ -204,7 +212,7 @@ function onClipEnd() {
   if (!clipArea) return;
 
   const toolsContainer = document.getElementById(
-    "screenshot-tools-container"
+    "clip-tools-container"
   ) as HTMLDivElement;
   const toolsContainerRect = toolsContainer.getBoundingClientRect();
   toolsContainer.style.visibility = "visible";
@@ -216,17 +224,71 @@ function onClipEnd() {
   toolsContainer.style.top = `${containerPos.y}px`;
 }
 
-listen("clip-start", (e) => {
-  screenLogSignal.emit("get clip-start:" + JSON.stringify(e.payload));
+function isMouseInsideUI(e: MouseEvent): boolean {
+  const isUserSelected = clipState.data.isUserSelected;
+  const toolsContainer = document.getElementById(
+    "clip-tools-container"
+  ) as HTMLDivElement;
+  const toolsContainerRect = toolsContainer.getBoundingClientRect();
+  if (
+    isUserSelected &&
+    e.clientX >= toolsContainerRect.left &&
+    e.clientX <= toolsContainerRect.right &&
+    e.clientY >= toolsContainerRect.top &&
+    e.clientY <= toolsContainerRect.bottom
+  ) {
+    return true;
+  }
+  const toolSettingsContainer = document.getElementById(
+    "clip-tool-settings-container"
+  ) as HTMLDivElement;
+  const toolSettingsContainerRect =
+    toolSettingsContainer.getBoundingClientRect();
+  if (
+    isUserSelected &&
+    e.clientX >= toolSettingsContainerRect.left &&
+    e.clientX <= toolSettingsContainerRect.right &&
+    e.clientY >= toolSettingsContainerRect.top &&
+    e.clientY <= toolSettingsContainerRect.bottom
+  ) {
+    return true;
+  }
+  return false;
+}
+
+function handleClipToolStart(paylod: ClipToolStateData) {
+  const screenshotCanvas = document.getElementById(
+    "screenshot-canvas"
+  ) as HTMLCanvasElement;
+  if (!screenshotCanvas) return;
+
+  const ctx = screenshotCanvas.getContext("2d");
+  if (!ctx) return;
+
+  switch (paylod.tool) {
+    case "line": {
+      const data = paylod.data as ClipToolLineData;
+      clipToolState.setState({
+        tool: "line",
+        data: {},
+      });
+      break;
+    }
+    default:
+      break;
+  }
+}
+
+// function handleClipToolEnd(paylod: ClipToolStateData) {}
+
+listen("clip-start", () => {
   setClipStartState();
 });
 listen("clip-end", (e) => {
-  screenLogSignal.emit("get clip-end:" + JSON.stringify(e.payload));
   setClipEndState();
   const display_id = e.payload as number;
   if (display_id === screenshotMetaState.data?.id) {
     onClipEnd();
-    screenLogSignal.emit("Clipped image");
   }
 });
 listen("mouse-move", (e) => {
@@ -242,41 +304,100 @@ listen("mouse-move", (e) => {
     );
   }
 });
+listen("clip-tool-start", (e) => {
+  // handleClipToolStart(JSON.parse(e.payload as string));
+  const data = JSON.parse(e.payload as string) as ClipToolStateData;
+  clipToolState.setState(data);
+  screenLogSignal.emit(`
+    Tool started: ${data.tool}
+  `);
+});
+listen("clip-tool-end", (e) => {
+  // handleClipToolEnd(JSON.parse(e.payload as string));
+  const data = JSON.parse(e.payload as string) as ClipToolStateData;
+  clipToolState.setState((prev) => ({
+    ...prev,
+    ...data,
+  }));
+  screenLogSignal.emit(`
+    Tool ended: ${data.tool}
+  `);
+});
 
 export function ClipOverlay() {
   useEffect(() => {
     const handleMouseDown = (e: MouseEvent) => {
-      const isUserSelected = clipState.data.isUserSelected;
-      const toolsContainer = document.getElementById(
-        "screenshot-tools-container"
-      ) as HTMLDivElement;
-      const toolsContainerRect = toolsContainer.getBoundingClientRect();
+      if (isMouseInsideUI(e)) {
+        return;
+      }
       if (
-        isUserSelected &&
-        e.clientX >= toolsContainerRect.left &&
-        e.clientX <= toolsContainerRect.right &&
-        e.clientY >= toolsContainerRect.top &&
-        e.clientY <= toolsContainerRect.bottom
+        clipState.data.isUserSelected &&
+        typeof clipToolState.data.tool !== "undefined"
       ) {
-        // skip if inside tools container
+        const payload: ClipToolStateData = {};
+        switch (clipToolState.data.tool) {
+          case "line": {
+            payload.tool = "line";
+            payload.data = {
+              startPoint: mousePointState.data,
+              endPoint: undefined,
+            };
+            break;
+          }
+          case "rect": {
+            payload.tool = "rect";
+            payload.data = {
+              startPoint: mousePointState.data,
+              endPoint: undefined,
+            };
+            break;
+          }
+          default: {
+            screenLogSignal.emit("Unknown clip tool type");
+            return;
+          }
+        }
+        invoke("clip_tool_start", {
+          payload: JSON.stringify(payload),
+        });
         return;
       }
       invoke("clip_start");
     };
     const handleMouseUp = (e: MouseEvent) => {
-      const isUserSelected = clipState.data.isUserSelected;
-      const toolsContainer = document.getElementById(
-        "screenshot-tools-container"
-      ) as HTMLDivElement;
-      const toolsContainerRect = toolsContainer.getBoundingClientRect();
+      if (isMouseInsideUI(e)) {
+        return;
+      }
       if (
-        isUserSelected &&
-        e.clientX >= toolsContainerRect.left &&
-        e.clientX <= toolsContainerRect.right &&
-        e.clientY >= toolsContainerRect.top &&
-        e.clientY <= toolsContainerRect.bottom
+        clipState.data.isUserSelected &&
+        typeof clipToolState.data.tool !== "undefined"
       ) {
-        // skip if inside tools container
+        const payload: ClipToolStateData = {};
+        switch (clipToolState.data.tool) {
+          case "line": {
+            payload.tool = "line";
+            payload.data = {
+              startPoint: undefined,
+              endPoint: mousePointState.data,
+            };
+            break;
+          }
+          case "rect": {
+            payload.tool = "rect";
+            payload.data = {
+              startPoint: undefined,
+              endPoint: mousePointState.data,
+            };
+            break;
+          }
+          default: {
+            screenLogSignal.emit("Unknown clip tool type");
+            return;
+          }
+        }
+        invoke("clip_tool_end", {
+          payload: JSON.stringify(payload),
+        });
         return;
       }
       invoke("clip_end", { displayId: screenshotMetaState.data!.id });
@@ -284,6 +405,7 @@ export function ClipOverlay() {
     // 用 requestAnimationFrame 和浏览器帧同步, 减少计算次数
     const frameClipStateChange = () => {
       try {
+        // ===== draw clip area overlay =====
         const clipData = clipState.data;
         if (!clipData) return;
 
@@ -308,6 +430,71 @@ export function ClipOverlay() {
         selection.style.width = `${area.width}px`;
         selection.style.height = `${area.height}px`;
         selection.style.outline = "1px solid rgba(0, 153, 255, 1)";
+        // ===== draw clip area overlay end =====
+
+        // ===== handle clip tool =====
+        if (clipToolState.data.tool) {
+          const clipToolCanvas = document.getElementById(
+            "clip-tool-tmp-canvas"
+          ) as HTMLCanvasElement;
+          const ctx = clipToolCanvas.getContext("2d");
+          if (!ctx) {
+            screenLogSignal.emit(
+              "[error] Failed to get clip tool canvas context"
+            );
+            return;
+          }
+          // 如果有设置 tool 那么根据 tool 检查 data 查看是否已经开始绘图
+          switch (clipToolState.data.tool) {
+            case "line": {
+              const data = clipToolState.data.data as ClipToolLineData;
+              if (data.startPoint && data.endPoint) {
+                // 已经绘制完成, 啥也不做
+                break;
+              }
+              if (data.startPoint && !data.endPoint) {
+                // 绘制中
+                // 清空上一次绘制的结果
+                ctx.clearRect(
+                  0,
+                  0,
+                  clipToolCanvas.width,
+                  clipToolCanvas.height
+                );
+                ctx.strokeStyle = "rgba(0, 153, 255, 1)";
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                const clientStartP = coordTrans.globalToClient(
+                  data.startPoint!,
+                  { displayId: screenshotMetaState.data!.id },
+                  displaysState.data
+                );
+                const clientEndP = coordTrans.globalToClient(
+                  mousePointState.data!,
+                  { displayId: screenshotMetaState.data!.id },
+                  displaysState.data
+                );
+                ctx.moveTo(clientStartP.x, clientStartP.y);
+                ctx.lineTo(clientEndP.x, clientEndP.y);
+                ctx.stroke();
+                break;
+              }
+              if (!data.startPoint && !data.endPoint) {
+                // 尚未开始绘制, 不会有这种情况
+                break;
+              }
+              if (!data.startPoint && data.endPoint) {
+                // 只有结束点, 不会有这种情况
+                break;
+              }
+              break;
+            }
+            default: {
+              break;
+            }
+          }
+        }
+        // ===== handle clip tool end =====
       } finally {
         requestAnimationFrame(frameClipStateChange);
       }
@@ -467,7 +654,7 @@ function ScreenshotUI() {
           flexDirection: "column",
           alignItems: "center",
           fontSize: "12px",
-          zIndex: 10,
+          zIndex: 20,
           width: "100px",
           backgroundColor: "rgba(43, 43, 43, 1)",
           color: "whitesmoke",
@@ -481,7 +668,7 @@ function ScreenshotUI() {
 
       {/* Tool bar rendering will be handle in onClipEnd function */}
       <div
-        id="screenshot-tools-container"
+        id="clip-tools-container"
         style={{
           visibility: "hidden",
           cursor: "default",
@@ -489,45 +676,51 @@ function ScreenshotUI() {
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          zIndex: 10,
-          backgroundColor: "var(--tool-bar-bg)",
+          zIndex: 20,
+          backgroundColor: "var(--toolbar-bg)",
           borderRadius: "8px",
           padding: `${STYLES_CONSTS.toolsContainerPaddingY}px ${STYLES_CONSTS.toolsContainerPaddingX}px`,
         }}
       >
-        <button
-          className="screenshot-tool-btn"
-          data-tooltip="Draw Line"
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
+        <ToolBtn
+          name="line"
+          tooltip="Draw Line"
+          onClick={async (reqSelect) => {
+            if (reqSelect) {
+              return {
+                tool: "line",
+              };
+            } else {
+              return { tool: undefined, data: undefined };
+            }
           }}
         >
           <LineIcon />
-        </button>
-        <button
-          className="screenshot-tool-btn"
-          data-tooltip="Draw Rectangle"
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
+        </ToolBtn>
+        <ToolBtn
+          name="rect"
+          tooltip="Draw Rectangle"
+          onClick={async (reqSelect) => {
+            if (reqSelect) {
+              return {
+                tool: "rect",
+              };
+            } else {
+              return { tool: undefined, data: undefined };
+            }
           }}
         >
           <RectIcon />
-        </button>
+        </ToolBtn>
 
-        <div className="screenshot-tool-separator" />
+        <div className="clip-tool-separator" />
 
         <button
-          className="screenshot-tool-btn"
+          className="clip-tool-btn clip-tool-btn-tip"
           data-tooltip="Save"
           onClick={async () => {
             try {
               const clippedImg = await getClippedImage("dataUrl");
-              if (!clippedImg) {
-                screenLogSignal.emit("Failed to get clipped image");
-                return;
-              }
               const targetPath = await save({
                 defaultPath: `${Date.now()}.jpg`,
                 filters: [
@@ -538,7 +731,6 @@ function ScreenshotUI() {
                 ],
               });
               if (!targetPath) return;
-              screenLogSignal.emit(`clipped image saved to: ${targetPath}`);
               await writeFile(targetPath, dataUrlToBytes(clippedImg));
               clipState.setState({
                 isClipping: false,
@@ -553,7 +745,7 @@ function ScreenshotUI() {
           <DownloadIcon />
         </button>
         <button
-          className="screenshot-tool-btn"
+          className="clip-tool-btn clip-tool-btn-tip"
           data-tooltip="Cancel"
           onClick={async () => {
             await invoke("clip_cancel");
@@ -561,18 +753,197 @@ function ScreenshotUI() {
         >
           <CrossIcon />
         </button>
-        <CopyToClipbordBtn />
+        <CopyToClipboardBtn />
       </div>
+      <ToolSettings />
     </>
   );
 }
 
-function CopyToClipbordBtn() {
+type CircleProps = {
+  r: number;
+  style?: React.CSSProperties;
+};
+function Circle({ r, style }: CircleProps) {
+  return (
+    <div
+      style={{
+        display: "inline-block",
+        width: `${r * 2}px`,
+        height: `${r * 2}px`,
+        borderRadius: "50%",
+        backgroundColor: "var(--toolbar-color-text)",
+        ...style,
+      }}
+    />
+  );
+}
+
+function LineToolSettings() {
+  return (
+    <>
+      <button className="clip-tool-btn">
+        <Circle r={2} />
+      </button>
+      <button className="clip-tool-btn">
+        <Circle r={4} />
+      </button>
+      <button className="clip-tool-btn">
+        <Circle r={6} />
+      </button>
+      <div className="clip-tool-separator" />
+      <input type="color" />
+    </>
+  );
+}
+
+function RectToolSettings() {
+  return (
+    <>
+      <button className="clip-tool-btn">
+        <Circle r={2} />
+      </button>
+      <button className="clip-tool-btn">
+        <Circle r={4} />
+      </button>
+      <button className="clip-tool-btn">
+        <Circle r={6} />
+      </button>
+      <div className="clip-tool-separator" />
+      <input type="color" />
+    </>
+  );
+}
+
+function ToolSettings() {
+  const [currentTool, setCurrentTool] = useState<ClipToolStateData["tool"]>();
+  useEffect(() => {
+    const listenToolState = (data: ClipToolStateData) => {
+      setCurrentTool(data.tool);
+
+      // visible settings container and set current btn style
+      const settingsContainer = document.getElementById(
+        "clip-tool-settings-container"
+      ) as HTMLDivElement;
+      const clipToolsContainer = document.getElementById(
+        "clip-tools-container"
+      );
+      if (data.tool && clipToolsContainer?.style.visibility === "visible") {
+        // 如果 data.tool 有值并且当前窗口的 clipToolsContainer 是可见的
+        // 那么说明有工具在当前窗口被选中
+        // 则 visible settings container
+        // 并且设置当前工具为 hover 属性, 其他工具为非 hover 属性
+        if (settingsContainer.style.visibility === "visible") {
+          // 如果已经是 visible 了那么跳过
+          return;
+        }
+        settingsContainer.style.visibility = "visible";
+        const toolBtn = document.getElementById(
+          ClipToolHelper.makeClipToolBtnId(data.tool)
+        ) as HTMLButtonElement;
+        toolBtn.className = "clip-tool-btn clip-tool-btn-tip hover";
+        const otherBtns = ClipToolHelper.getOtherToolElems(data.tool);
+        otherBtns.forEach((btn) => {
+          btn.className = "clip-tool-btn clip-tool-btn-tip";
+        });
+
+        const toolBtnRect = toolBtn.getBoundingClientRect();
+        screenLogSignal.emit(
+          `visible tool: ${data.tool}, rect: ${JSON.stringify(
+            toolBtnRect,
+            null,
+            2
+          )}`
+        );
+        settingsContainer.style.left = `${
+          toolBtnRect.left - STYLES_CONSTS.toolsContainerPaddingX
+        }px`;
+        settingsContainer.style.top = `${
+          toolBtnRect.top +
+          toolBtnRect.height +
+          STYLES_CONSTS.toolsContainerPaddingY +
+          4
+        }px`;
+      } else {
+        const otherBtns = ClipToolHelper.getOtherToolElems(data.tool);
+        otherBtns.forEach((btn) => {
+          btn.className = "clip-tool-btn clip-tool-btn-tip";
+        });
+        settingsContainer.style.visibility = "hidden";
+      }
+    };
+    clipToolState.subscribe(listenToolState);
+
+    return () => {
+      clipToolState.unsubscribe(listenToolState);
+    };
+  }, []);
+
+  const contents = () => {
+    switch (currentTool) {
+      case "line":
+        return <LineToolSettings />;
+      case "rect":
+        return <RectToolSettings />;
+      default:
+        return null;
+    }
+  };
+
+  return (
+    <div
+      id="clip-tool-settings-container"
+      style={{
+        visibility: "hidden",
+        zIndex: 20,
+        position: "absolute",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        borderRadius: "8px",
+        backgroundColor: "var(--toolbar-bg)",
+        padding: `${STYLES_CONSTS.toolsContainerPaddingY}px ${STYLES_CONSTS.toolsContainerPaddingX}px`,
+      }}
+    >
+      {contents()}
+    </div>
+  );
+}
+
+type ToolBtnProps = {
+  name: Exclude<ClipToolStateData["tool"], undefined>;
+  tooltip: string;
+  children: React.ReactNode;
+  onClick: (reqSelect: boolean) => Promise<ClipToolStateData>;
+};
+function ToolBtn({ name, tooltip, children, onClick }: ToolBtnProps) {
+  return (
+    <button
+      id={`clip-tool-btn-${name}`}
+      className="clip-tool-btn clip-tool-btn-tip"
+      data-tooltip={tooltip}
+      onClick={async () => {
+        if (clipToolState.data.tool === name) {
+          // if prev tool state is the same as current, request deselect tool
+          clipToolState.setState(await onClick(false));
+        } else {
+          // if prev tool state is different from current, request select tool
+          const data = await onClick(true);
+          clipToolState.setState(data);
+        }
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function CopyToClipboardBtn() {
   const [loading, setLoading] = useState(false);
 
   return (
     <button
-      className="screenshot-tool-btn"
+      className="clip-tool-btn clip-tool-btn-tip"
       data-tooltip="Copy to clipboard"
       disabled={loading}
       onClick={async () => {
@@ -582,11 +953,9 @@ function CopyToClipbordBtn() {
           setLoading(true);
           const clippedImg = await getClippedImage("tauri-img");
           if (!clippedImg) {
-            screenLogSignal.emit("Failed to get clipped image");
             return;
           }
           await writeImage(clippedImg);
-          screenLogSignal.emit("Clipped image copied to clipboard");
           await invoke("clip_cancel");
         } catch (error) {
           screenLogSignal.emit(`Failed to copy clipped image: ${error}`);

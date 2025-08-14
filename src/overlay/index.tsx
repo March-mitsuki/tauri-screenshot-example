@@ -69,6 +69,11 @@ function Overlay() {
     const canvas = document.getElementById(
       "screenshot-canvas"
     ) as HTMLCanvasElement;
+    const clipToolCanvas = document.getElementById(
+      "clip-tool-tmp-canvas"
+    ) as HTMLCanvasElement;
+    clipToolCanvas.width = screenshot.width;
+    clipToolCanvas.height = screenshot.height;
     const tasks = [
       webviewWindow.setDecorations(false),
       webviewWindow.setPosition(
@@ -110,6 +115,16 @@ function Overlay() {
         draggable={false}
       />
       <ClipOverlay />
+      {/* 实时显示当前 tool 绘制结果的的临时画布 */}
+      <canvas
+        id="clip-tool-tmp-canvas"
+        style={{
+          position: "absolute",
+          left: 0,
+          top: 0,
+          zIndex: 10,
+        }}
+      />
     </>
   );
 }

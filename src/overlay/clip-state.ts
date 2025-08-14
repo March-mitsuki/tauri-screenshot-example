@@ -79,3 +79,42 @@ export const screenshotsState = new State<Record<string, Screenshot>>({});
 export const mousePointState = new State<Point | undefined>(undefined);
 export const displaysState = new State<Display[]>([]);
 export const clipState = new ClipState();
+
+export const CLIP_TOOL_NAMES = ["line", "rect"] as const;
+export type ClipToolName = (typeof CLIP_TOOL_NAMES)[number];
+export type ClipToolLineData = {
+  startPoint?: Point;
+  endPoint?: Point;
+};
+export type ClipToolRectData = {
+  startPoint?: Point;
+  endPoint?: Point;
+};
+export type ClipToolStateData = {
+  tool?: ClipToolName;
+  data?: ClipToolLineData | ClipToolRectData;
+};
+export const clipToolState = new State<ClipToolStateData>({});
+export type DrawnToolStateData = {
+  tool: ClipToolName;
+  data: ClipToolLineData | ClipToolRectData;
+}[];
+export const drawnToolState = new State<DrawnToolStateData>([]);
+export class ClipToolHelper {
+  static makeClipToolBtnId(name: ClipToolName) {
+    return `clip-tool-btn-${name}`;
+  }
+
+  static getOtherToolNames(name?: ClipToolName): ClipToolName[] {
+    if (!name) return CLIP_TOOL_NAMES as unknown as ClipToolName[];
+    return CLIP_TOOL_NAMES.filter((tool) => tool !== name);
+  }
+
+  static getOtherToolElems(name?: ClipToolName): HTMLButtonElement[] {
+    return ClipToolHelper.getOtherToolNames(name).map((toolName) => {
+      return document.getElementById(
+        ClipToolHelper.makeClipToolBtnId(toolName)
+      ) as HTMLButtonElement;
+    });
+  }
+}
