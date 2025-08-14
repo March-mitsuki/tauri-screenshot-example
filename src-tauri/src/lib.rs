@@ -150,30 +150,8 @@ async fn get_displays_data(app: tauri::AppHandle) -> Result<Vec<Display>, String
 }
 
 #[tauri::command]
-fn clip_start(app: tauri::AppHandle) -> Result<(), String> {
-    app.emit("clip-start", ()).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-fn clip_end(app: tauri::AppHandle, display_id: i32) -> Result<(), String> {
-    app.emit("clip-end", display_id).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-fn clip_cancel(app: tauri::AppHandle) -> Result<(), String> {
-    app.emit("clip-cancel", ()).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-fn clip_tool_start(app: tauri::AppHandle, payload: String) -> Result<(), String> {
-    app.emit("clip-tool-start", payload)
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-fn clip_tool_end(app: tauri::AppHandle, payload: String) -> Result<(), String> {
-    app.emit("clip-tool-end", payload)
-        .map_err(|e| e.to_string())
+fn broadcast(app: tauri::AppHandle, event: String, payload: String) -> Result<(), String> {
+    app.emit(&event, payload).map_err(|e| e.to_string())
 }
 
 #[cfg(desktop)]
@@ -255,11 +233,7 @@ pub fn run() {
             get_screenshot_data,
             get_screenshots_data,
             get_displays_data,
-            clip_start,
-            clip_end,
-            clip_cancel,
-            clip_tool_start,
-            clip_tool_end,
+            broadcast,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -17,11 +17,11 @@ import {
   screenshotsState,
 } from "./clip-state";
 import { Display } from "./cord-trans";
-import { listen } from "@tauri-apps/api/event";
 import { drawScreenshot } from "./_shared";
 import { screenLogSignal } from "../components/screen-log";
+import { TauriBroadcast } from "../common/tauri-broadcast";
 
-listen("clip-cancel", async () => {
+TauriBroadcast.listen("clip-cancel", async () => {
   const webviewWindow = getCurrentWebviewWindow();
   await webviewWindow.destroy();
 });
@@ -55,7 +55,7 @@ function Overlay() {
     };
     const listenForKeyDown = async (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        await invoke("clip_cancel");
+        await TauriBroadcast.broadcast("clip-cancel");
       }
     };
     const listenDrawnToolState = (state: DrawnToolStateData) => {

@@ -1,6 +1,4 @@
 import { useEffect, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
-import { invoke } from "@tauri-apps/api/core";
 import { Image as TauriImage } from "@tauri-apps/api/image";
 import { save } from "@tauri-apps/plugin-dialog";
 import { writeFile } from "@tauri-apps/plugin-fs";
@@ -35,6 +33,8 @@ import {
 } from "../components/icons";
 import { writeImage } from "@tauri-apps/plugin-clipboard-manager";
 import { DotSpinner } from "../components/dot-spinner";
+import { TauriBroadcast } from "../common/tauri-broadcast";
+import { listen } from "@tauri-apps/api/event";
 
 const STYLES_CONSTS = {
   toolsContainerPaddingX: 4,
@@ -356,9 +356,10 @@ function handleInvokeClipToolStart(): boolean {
         return true;
       }
     }
-    invoke("clip_tool_start", {
-      payload: JSON.stringify(payload),
-    });
+    // invoke("clip_tool_start", {
+    //   payload: JSON.stringify(payload),
+    // });
+    TauriBroadcast.broadcast("clip-tool-start", payload);
     return true;
   }
   return false;
@@ -403,24 +404,15 @@ function handleInvokeClipToolEnd(): boolean {
         return true;
       }
     }
-    invoke("clip_tool_end", {
-      payload: JSON.stringify(payload),
-    });
+    // invoke("clip_tool_end", {
+    //   payload: JSON.stringify(payload),
+    // });
+    TauriBroadcast.broadcast("clip-tool-end", payload);
     return true;
   }
   return false;
 }
 
-listen("clip-start", () => {
-  setClipStartState();
-});
-listen("clip-end", (e) => {
-  setClipEndState();
-  const display_id = e.payload as number;
-  if (display_id === screenshotMetaState.data?.id) {
-    onClipEnd();
-  }
-});
 listen("mouse-move", (e) => {
   const p = e.payload as Point;
   mousePointState.setState(p);
@@ -434,17 +426,22 @@ listen("mouse-move", (e) => {
     );
   }
 });
-listen("clip-tool-start", (e) => {
-  // handleClipToolStart(JSON.parse(e.payload as string));
-  const data = JSON.parse(e.payload as string) as ClipToolStateData;
+TauriBroadcast.listen("clip-start", () => {
+  setClipStartState();
+});
+TauriBroadcast.listen("clip-end", (data) => {
+  setClipEndState();
+  if (data.displayId === screenshotMetaState.data?.id) {
+    onClipEnd();
+  }
+});
+TauriBroadcast.listen("clip-tool-start", (data) => {
   clipToolState.setState(data);
   screenLogSignal.emit(`
     Tool started: ${data.tool}, ${JSON.stringify(data, null, 2)}
   `);
 });
-listen("clip-tool-end", (e) => {
-  // handleClipToolEnd(JSON.parse(e.payload as string));
-  const data = JSON.parse(e.payload as string) as ClipToolStateData;
+TauriBroadcast.listen("clip-tool-end", (data) => {
   clipToolState.setState((prev) => {
     const newState = {
       tool: data.tool,
@@ -475,7 +472,8 @@ export function ClipOverlay() {
       }
       const needReturn = handleInvokeClipToolStart();
       if (needReturn) return;
-      invoke("clip_start");
+      // invoke("clip_start");
+      TauriBroadcast.broadcast("clip-start");
     };
     const handleMouseUp = (e: MouseEvent) => {
       if (isMouseInsideUI(e)) {
@@ -483,7 +481,10 @@ export function ClipOverlay() {
       }
       const needReturn = handleInvokeClipToolEnd();
       if (needReturn) return;
-      invoke("clip_end", { displayId: screenshotMetaState.data!.id });
+      // invoke("clip_end", { displayId: screenshotMetaState.data!.id });
+      TauriBroadcast.broadcast("clip-end", {
+        displayId: screenshotMetaState.data!.id,
+      });
     };
     // 用 requestAnimationFrame 和浏览器帧同步, 减少计算次数
     const frameClipStateChange = () => {
@@ -810,7 +811,8 @@ function ScreenshotUI() {
               });
               if (!targetPath) return;
               await writeFile(targetPath, dataUrlToBytes(clippedImg));
-              await invoke("clip_cancel");
+              // await invoke("clip_cancel");
+              TauriBroadcast.broadcast("clip-cancel");
             } catch (error) {
               screenLogSignal.emit(`Failed to save clipped image: ${error}`);
             }
@@ -822,7 +824,8 @@ function ScreenshotUI() {
           className="clip-tool-btn clip-tool-btn-tip"
           data-tooltip="Cancel"
           onClick={async () => {
-            await invoke("clip_cancel");
+            // await invoke("clip_cancel");
+            TauriBroadcast.broadcast("clip-cancel");
           }}
         >
           <CrossIcon />
@@ -1178,7 +1181,8 @@ function CopyToClipboardBtn() {
             return;
           }
           await writeImage(clippedImg);
-          await invoke("clip_cancel");
+          // await invoke("clip_cancel");
+          await TauriBroadcast.broadcast("clip-cancel");
         } catch (error) {
           screenLogSignal.emit(`Failed to copy clipped image: ${error}`);
         } finally {
