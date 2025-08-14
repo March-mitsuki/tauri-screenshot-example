@@ -188,20 +188,25 @@ function setClipEndState() {
   const globalPoint = mousePointState.data;
   if (!globalPoint) return;
 
-  clipState.setState((prev) => ({
-    ...prev,
-    isClipping: false,
-    isUserSelected: true,
-    endPoint: coordTrans.globalToClient(
+  clipState.setState((prev) => {
+    const clientEndP = coordTrans.globalToClient(
       globalPoint,
       { displayId: screenshotMetaState.data!.id },
       displaysState.data
-    ),
-    endPointGlobalNotNormalized: coordTrans.globalToNormalized(
+    );
+    const normalizedGlobalEndP = coordTrans.globalToNormalized(
       globalPoint,
       displaysState.data
-    ),
-  }));
+    );
+    const clipArea = detectClipArea(prev.startPoint, clientEndP);
+    return {
+      ...prev,
+      isClipping: false,
+      isUserSelected: clipArea ? true : false,
+      endPoint: clientEndP,
+      endPointGlobalNotNormalized: normalizedGlobalEndP,
+    };
+  });
 }
 
 function onClipEnd() {
@@ -732,10 +737,6 @@ function ScreenshotUI() {
               });
               if (!targetPath) return;
               await writeFile(targetPath, dataUrlToBytes(clippedImg));
-              clipState.setState({
-                isClipping: false,
-                isUserSelected: false,
-              });
               await invoke("clip_cancel");
             } catch (error) {
               screenLogSignal.emit(`Failed to save clipped image: ${error}`);
