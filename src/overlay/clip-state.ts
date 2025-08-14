@@ -16,12 +16,14 @@ export type Screenshot = {
 export type ClipStateData = {
   isClipping: boolean;
   isUserSelected: boolean;
+  // client point
   startPoint?: Point;
+  startPointGlobal?: Point;
   startPointGlobalNotNormalized?: Point;
   endPoint?: Point;
+  endPointGlobal?: Point;
   endPointGlobalNotNormalized?: Point;
 };
-
 class ClipState extends State<ClipStateData> {
   constructor() {
     super({

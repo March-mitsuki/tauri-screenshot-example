@@ -223,7 +223,7 @@ function setClipStartState() {
   toolsContainer!.style.visibility = "hidden";
   clipToolState.setState((prev) => ({
     ...prev,
-    tool: undefined,
+    currentTool: undefined,
   }));
   clipState.setState({
     isClipping: true,
@@ -234,6 +234,7 @@ function setClipStartState() {
       { displayId: screenshotMetaState.data!.id },
       displaysState.data
     ),
+    startPointGlobal: globalPoint,
     startPointGlobalNotNormalized: coordTrans.globalToNormalized(
       globalPoint,
       displaysState.data
@@ -261,6 +262,7 @@ function setClipEndState() {
       isClipping: false,
       isUserSelected: clipArea ? true : false,
       endPoint: clientEndP,
+      endPointGlobal: globalPoint,
       endPointGlobalNotNormalized: normalizedGlobalEndP,
     };
   });
@@ -272,7 +274,39 @@ function onClipEnd() {
     clipState.data.endPoint
   );
   if (!clipArea) return;
+  const rightBottom: Point = {
+    x: clipArea.x + clipArea.width,
+    y: clipArea.y + clipArea.height,
+  };
+  const rightBottomGlobal = coordTrans.clientToGlobal(
+    rightBottom,
+    { displayId: screenshotMetaState.data!.id },
+    displaysState.data
+  );
+  const hitDisplay = coordTrans.hitTestDisplay(
+    rightBottomGlobal,
+    displaysState.data
+  );
+  if (!hitDisplay) {
+    screenLogSignal.emit("onClipEnd: hitDisplay is null");
+    return;
+  }
+  if (hitDisplay.id === screenshotMetaState.data!.id) {
+    visibleToolsContainer();
+  } else {
+    TauriBroadcast.broadcast("clip-end-current-display", {
+      displayId: hitDisplay?.id,
+      globalRightBottom: rightBottomGlobal,
+    });
+  }
+}
 
+function visibleToolsContainer() {
+  const clipArea = detectArea(
+    clipState.data.startPoint,
+    clipState.data.endPoint
+  );
+  if (!clipArea) return;
   const toolsContainer = document.getElementById(
     "clip-tools-container"
   ) as HTMLDivElement;
@@ -379,9 +413,27 @@ TauriBroadcast.listen("clip-start", () => {
 });
 TauriBroadcast.listen("clip-end", (data) => {
   setClipEndState();
+  // displayId 是用户点击的屏幕的 ID
+  // 这里过滤掉其他的是因为只需要做一次计算就够了
   if (data.displayId === screenshotMetaState.data?.id) {
     onClipEnd();
   }
+});
+TauriBroadcast.listen("clip-end-current-display", (data) => {
+  // displayId 是用户选定区域最终右下角坐标所在的显示器的 ID
+  if (data.displayId !== screenshotMetaState.data?.id) {
+    return;
+  }
+  visibleToolsContainer();
+});
+TauriBroadcast.listen("clip-tool-select", (data) => {
+  if (data.displayId !== screenshotMetaState.data?.id) {
+    return;
+  }
+  clipToolState.setState({
+    currentTool: data.currentTool,
+    toolData: data.toolData,
+  });
 });
 TauriBroadcast.listen("clip-tool-start", (data) => {
   clipToolState.setState(data);
@@ -1089,14 +1141,12 @@ function ToolBtn({ name, tooltip, children, onClick }: ToolBtnProps) {
       className="clip-tool-btn clip-tool-btn-tip"
       data-tooltip={tooltip}
       onClick={async () => {
-        if (clipToolState.data.currentTool === name) {
-          // if prev tool state is the same as current, request deselect tool
-          clipToolState.setState(await onClick(false));
-        } else {
-          // if prev tool state is different from current, request select tool
-          const data = await onClick(true);
-          clipToolState.setState(data);
-        }
+        const requestSelect = clipToolState.data.currentTool !== name;
+        const data = await onClick(requestSelect);
+        TauriBroadcast.broadcast("clip-tool-select", {
+          ...data,
+          displayId: screenshotMetaState.data!.id,
+        });
       }}
     >
       {children}
