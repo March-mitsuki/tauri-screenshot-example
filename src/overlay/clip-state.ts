@@ -85,10 +85,14 @@ export type ClipToolName = (typeof CLIP_TOOL_NAMES)[number];
 export type ClipToolLineData = {
   startPoint?: Point;
   endPoint?: Point;
+  lineWidth: number;
+  strokeStyle: string;
 };
 export type ClipToolRectData = {
   startPoint?: Point;
   endPoint?: Point;
+  lineWidth: number;
+  strokeStyle: string;
 };
 export type ClipToolStateData = {
   tool?: ClipToolName;
@@ -116,5 +120,12 @@ export class ClipToolHelper {
         ClipToolHelper.makeClipToolBtnId(toolName)
       ) as HTMLButtonElement;
     });
+  }
+
+  static getDefaultStrokeStyle(): string {
+    return "#0099ff";
+  }
+  static getDefaultLineWidth(): number {
+    return 2;
   }
 }
