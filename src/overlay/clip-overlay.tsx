@@ -16,6 +16,7 @@ import {
   ClipToolHelper,
   ClipToolRectData,
   drawnToolState,
+  ClipToolName,
 } from "./clip-state";
 import { ScreenLogRenderer, screenLogSignal } from "../components/screen-log";
 import {
@@ -325,37 +326,14 @@ function isMouseInsideUI(e: MouseEvent): boolean {
 function handleInvokeClipToolStart(): boolean {
   if (
     clipState.data.isUserSelected &&
-    typeof clipToolState.data.tool !== "undefined"
+    typeof clipToolState.data.currentTool !== "undefined"
   ) {
-    const payload: ClipToolStateData = {};
-    switch (clipToolState.data.tool) {
-      case "line": {
-        const stateData = clipToolState.data.data as ClipToolLineData;
-        payload.tool = "line";
-        payload.data = {
-          startPoint: mousePointState.data,
-          endPoint: undefined,
-          strokeStyle: stateData.strokeStyle,
-          lineWidth: stateData.lineWidth,
-        } as ClipToolLineData;
-        break;
-      }
-      case "rect": {
-        const stateData = clipToolState.data.data as ClipToolRectData;
-        payload.tool = "rect";
-        payload.data = {
-          startPoint: mousePointState.data,
-          endPoint: undefined,
-          strokeStyle: stateData.strokeStyle,
-          lineWidth: stateData.lineWidth,
-        } as ClipToolRectData;
-        break;
-      }
-      default: {
-        screenLogSignal.emit("Unknown clip tool type");
-        return true;
-      }
-    }
+    const payload = clipToolState.data;
+    payload.toolData[clipToolState.data.currentTool] = {
+      ...payload.toolData[clipToolState.data.currentTool],
+      startPoint: mousePointState.data,
+      endPoint: undefined,
+    };
     TauriBroadcast.broadcast("clip-tool-start", payload);
     return true;
   }
@@ -370,37 +348,13 @@ function handleInvokeClipToolStart(): boolean {
 function handleInvokeClipToolEnd(): boolean {
   if (
     clipState.data.isUserSelected &&
-    typeof clipToolState.data.tool !== "undefined"
+    typeof clipToolState.data.currentTool !== "undefined"
   ) {
-    const payload: ClipToolStateData = {};
-    switch (clipToolState.data.tool) {
-      case "line": {
-        const stateData = clipToolState.data.data as ClipToolLineData;
-        payload.tool = "line";
-        payload.data = {
-          startPoint: undefined,
-          endPoint: mousePointState.data,
-          strokeStyle: stateData.strokeStyle,
-          lineWidth: stateData.lineWidth,
-        } as ClipToolLineData;
-        break;
-      }
-      case "rect": {
-        const stateData = clipToolState.data.data as ClipToolRectData;
-        payload.tool = "rect";
-        payload.data = {
-          startPoint: undefined,
-          endPoint: mousePointState.data,
-          strokeStyle: stateData.strokeStyle,
-          lineWidth: stateData.lineWidth,
-        } as ClipToolRectData;
-        break;
-      }
-      default: {
-        screenLogSignal.emit("Unknown clip tool type");
-        return true;
-      }
-    }
+    const payload = clipToolState.data;
+    payload.toolData[clipToolState.data.currentTool] = {
+      ...payload.toolData[clipToolState.data.currentTool],
+      endPoint: mousePointState.data,
+    };
     TauriBroadcast.broadcast("clip-tool-end", payload);
     return true;
   }
@@ -432,26 +386,30 @@ TauriBroadcast.listen("clip-end", (data) => {
 TauriBroadcast.listen("clip-tool-start", (data) => {
   clipToolState.setState(data);
   screenLogSignal.emit(`
-    Tool started: ${data.tool}, ${JSON.stringify(data, null, 2)}
+    Tool started: ${data.currentTool}, ${JSON.stringify(data, null, 2)}
   `);
 });
 TauriBroadcast.listen("clip-tool-end", (data) => {
   clipToolState.setState((prev) => {
     const newState = {
-      tool: data.tool,
-      data: {
-        ...prev.data,
-        ...data.data,
+      currentTool: data.currentTool,
+      toolData: {
+        ...prev.toolData,
+        ...data.toolData,
       },
     } as ClipToolStateData;
     screenLogSignal.emit(
-      `Tool ended: ${data.tool}, new: ${JSON.stringify(newState, null, 2)}`
+      `Tool ended: ${data.currentTool}, new: ${JSON.stringify(
+        newState,
+        null,
+        2
+      )}`
     );
     drawnToolState.setState((prev) => [
       ...prev,
       {
-        tool: newState.tool!,
-        data: newState.data!,
+        tool: newState.currentTool!,
+        data: newState.toolData[newState.currentTool!],
       },
     ]);
     return newState;
@@ -509,7 +467,7 @@ export function ClipOverlay() {
         // ===== draw clip area overlay end =====
 
         // ===== handle clip tool =====
-        if (clipToolState.data.tool) {
+        if (clipToolState.data.currentTool) {
           const clipToolCanvas = document.getElementById(
             "clip-tool-tmp-canvas"
           ) as HTMLCanvasElement;
@@ -519,9 +477,9 @@ export function ClipOverlay() {
             return;
           }
           // 如果有设置 tool 那么根据 tool 检查 data 查看是否已经开始绘图
-          switch (clipToolState.data.tool) {
+          switch (clipToolState.data.currentTool) {
             case "line": {
-              const data = clipToolState.data.data as ClipToolLineData;
+              const data = clipToolState.data.toolData.line as ClipToolLineData;
               // 如果只有 startPoint 没有 endPoint 表示正在绘制中
               if (data.startPoint && !data.endPoint) {
                 ClipToolHelper.clearCanvas(ctx, clipToolCanvas);
@@ -536,7 +494,7 @@ export function ClipOverlay() {
               break;
             }
             case "rect": {
-              const data = clipToolState.data.data as ClipToolRectData;
+              const data = clipToolState.data.toolData.rect as ClipToolRectData;
               // 绘制中
               if (data.startPoint && !data.endPoint) {
                 ClipToolHelper.clearCanvas(ctx, clipToolCanvas);
@@ -748,16 +706,19 @@ function ScreenshotUI() {
           tooltip="Draw Line"
           onClick={async (reqSelect) => {
             if (reqSelect) {
-              const data: ClipToolLineData = {
-                lineWidth: ClipToolHelper.getDefaultLineWidth(),
-                strokeStyle: ClipToolHelper.getDefaultStrokeStyle(),
-              };
               return {
-                tool: "line",
-                data,
+                currentTool: "line",
+                toolData: {
+                  ...clipToolState.data.toolData,
+                },
               };
             } else {
-              return { tool: undefined, data: undefined };
+              return {
+                currentTool: undefined,
+                toolData: {
+                  ...clipToolState.data.toolData,
+                },
+              };
             }
           }}
         >
@@ -768,16 +729,19 @@ function ScreenshotUI() {
           tooltip="Draw Rectangle"
           onClick={async (reqSelect) => {
             if (reqSelect) {
-              const data: ClipToolRectData = {
-                lineWidth: ClipToolHelper.getDefaultLineWidth(),
-                strokeStyle: ClipToolHelper.getDefaultStrokeStyle(),
-              };
               return {
-                tool: "rect",
-                data,
+                currentTool: "rect",
+                toolData: {
+                  ...clipToolState.data.toolData,
+                },
               };
             } else {
-              return { tool: undefined, data: undefined };
+              return {
+                currentTool: undefined,
+                toolData: {
+                  ...clipToolState.data.toolData,
+                },
+              };
             }
           }}
         >
@@ -848,13 +812,13 @@ function Circle({ r, style }: CircleProps) {
 
 function LineToolSettings() {
   const [selectedLineWidth, setSelectedLineWidth] = useState<number>(
-    ClipToolHelper.getDefaultLineWidth()
+    clipToolState.data.toolData.line.lineWidth
   );
 
   useEffect(() => {
     const listenToolState = (state: ClipToolStateData) => {
-      if (state.data && state.tool === "line" && state.data.lineWidth) {
-        setSelectedLineWidth(state.data.lineWidth);
+      if (state.currentTool === "line") {
+        setSelectedLineWidth(state.toolData.line.lineWidth);
       }
     };
     clipToolState.subscribe(listenToolState);
@@ -866,18 +830,15 @@ function LineToolSettings() {
 
   const setLineWidth = (width: number) => {
     clipToolState.setState((prev) => {
-      const data: ClipToolLineData = prev.data
-        ? {
-            ...(prev.data as ClipToolLineData),
-            lineWidth: width,
-          }
-        : {
-            strokeStyle: ClipToolHelper.getDefaultStrokeStyle(),
-            lineWidth: width,
-          };
       return {
         ...prev,
-        data,
+        toolData: {
+          ...prev.toolData,
+          line: {
+            ...prev.toolData.line,
+            lineWidth: width,
+          },
+        },
       };
     });
   };
@@ -911,24 +872,21 @@ function LineToolSettings() {
       <div className="clip-tool-separator" />
       <input
         type="color"
-        defaultValue={ClipToolHelper.getDefaultStrokeStyle()}
+        defaultValue={clipToolState.data.toolData.line.strokeStyle}
         onChange={(e) => {
           const color = e.currentTarget.value;
           if (color) {
             screenLogSignal.emit(`line tool color changed: ${color}`);
             clipToolState.setState((prev) => {
-              const data: ClipToolLineData = prev.data
-                ? {
-                    ...(prev.data as ClipToolLineData),
-                    strokeStyle: color,
-                  }
-                : {
-                    lineWidth: ClipToolHelper.getDefaultLineWidth(),
-                    strokeStyle: color,
-                  };
               return {
                 ...prev,
-                data,
+                toolData: {
+                  ...prev.toolData,
+                  line: {
+                    ...prev.toolData.line,
+                    strokeStyle: color,
+                  },
+                },
               };
             });
           }
@@ -940,13 +898,13 @@ function LineToolSettings() {
 
 function RectToolSettings() {
   const [selectedLineWidth, setSelectedLineWidth] = useState<number>(
-    ClipToolHelper.getDefaultLineWidth()
+    clipToolState.data.toolData.rect.lineWidth
   );
 
   useEffect(() => {
     const listenToolState = (state: ClipToolStateData) => {
-      if (state.data && state.tool === "rect" && state.data.lineWidth) {
-        setSelectedLineWidth(state.data.lineWidth);
+      if (state.currentTool === "rect") {
+        setSelectedLineWidth(state.toolData.rect.lineWidth);
       }
     };
     clipToolState.subscribe(listenToolState);
@@ -958,18 +916,15 @@ function RectToolSettings() {
 
   const setLineWidth = (width: number) => {
     clipToolState.setState((prev) => {
-      const data: ClipToolLineData = prev.data
-        ? {
-            ...(prev.data as ClipToolLineData),
-            lineWidth: width,
-          }
-        : {
-            strokeStyle: ClipToolHelper.getDefaultStrokeStyle(),
-            lineWidth: width,
-          };
       return {
         ...prev,
-        data,
+        toolData: {
+          ...prev.toolData,
+          rect: {
+            ...prev.toolData.rect,
+            lineWidth: width,
+          },
+        },
       };
     });
   };
@@ -1003,24 +958,20 @@ function RectToolSettings() {
       <div className="clip-tool-separator" />
       <input
         type="color"
-        defaultValue={ClipToolHelper.getDefaultStrokeStyle()}
+        defaultValue={clipToolState.data.toolData.rect.strokeStyle}
         onChange={(e) => {
           const color = e.currentTarget.value;
           if (color) {
-            screenLogSignal.emit(`line tool color changed: ${color}`);
             clipToolState.setState((prev) => {
-              const data: ClipToolLineData = prev.data
-                ? {
-                    ...(prev.data as ClipToolLineData),
-                    strokeStyle: color,
-                  }
-                : {
-                    lineWidth: ClipToolHelper.getDefaultLineWidth(),
-                    strokeStyle: color,
-                  };
               return {
                 ...prev,
-                data,
+                toolData: {
+                  ...prev.toolData,
+                  rect: {
+                    ...prev.toolData.rect,
+                    strokeStyle: color,
+                  },
+                },
               };
             });
           }
@@ -1031,10 +982,11 @@ function RectToolSettings() {
 }
 
 function ToolSettings() {
-  const [currentTool, setCurrentTool] = useState<ClipToolStateData["tool"]>();
+  const [currentTool, setCurrentTool] =
+    useState<ClipToolStateData["currentTool"]>();
   useEffect(() => {
     const listenToolState = (data: ClipToolStateData) => {
-      setCurrentTool(data.tool);
+      setCurrentTool(data.currentTool);
 
       // visible settings container and set current btn style
       const settingsContainer = document.getElementById(
@@ -1043,28 +995,27 @@ function ToolSettings() {
       const clipToolsContainer = document.getElementById(
         "clip-tools-container"
       );
-      if (data.tool && clipToolsContainer?.style.visibility === "visible") {
+      if (
+        data.currentTool &&
+        clipToolsContainer?.style.visibility === "visible"
+      ) {
         // 如果 data.tool 有值并且当前窗口的 clipToolsContainer 是可见的
         // 那么说明有工具在当前窗口被选中
         // 则 visible settings container
         // 并且设置当前工具为 hover 属性, 其他工具为非 hover 属性
-        if (settingsContainer.style.visibility === "visible") {
-          // 如果已经是 visible 了那么跳过
-          return;
-        }
         settingsContainer.style.visibility = "visible";
         const toolBtn = document.getElementById(
-          ClipToolHelper.makeClipToolBtnId(data.tool)
+          ClipToolHelper.makeClipToolBtnId(data.currentTool)
         ) as HTMLButtonElement;
         toolBtn.className = "clip-tool-btn clip-tool-btn-tip hover";
-        const otherBtns = ClipToolHelper.getOtherToolElems(data.tool);
+        const otherBtns = ClipToolHelper.getOtherToolElems(data.currentTool);
         otherBtns.forEach((btn) => {
           btn.className = "clip-tool-btn clip-tool-btn-tip";
         });
 
         const toolBtnRect = toolBtn.getBoundingClientRect();
         screenLogSignal.emit(
-          `visible tool: ${data.tool}, rect: ${JSON.stringify(
+          `visible tool: ${data.currentTool}, rect: ${JSON.stringify(
             toolBtnRect,
             null,
             2
@@ -1080,7 +1031,7 @@ function ToolSettings() {
           4
         }px`;
       } else {
-        const otherBtns = ClipToolHelper.getOtherToolElems(data.tool);
+        const otherBtns = ClipToolHelper.getOtherToolElems(data.currentTool);
         otherBtns.forEach((btn) => {
           btn.className = "clip-tool-btn clip-tool-btn-tip";
         });
@@ -1126,7 +1077,7 @@ function ToolSettings() {
 }
 
 type ToolBtnProps = {
-  name: Exclude<ClipToolStateData["tool"], undefined>;
+  name: ClipToolName;
   tooltip: string;
   children: React.ReactNode;
   onClick: (reqSelect: boolean) => Promise<ClipToolStateData>;
@@ -1138,7 +1089,7 @@ function ToolBtn({ name, tooltip, children, onClick }: ToolBtnProps) {
       className="clip-tool-btn clip-tool-btn-tip"
       data-tooltip={tooltip}
       onClick={async () => {
-        if (clipToolState.data.tool === name) {
+        if (clipToolState.data.currentTool === name) {
           // if prev tool state is the same as current, request deselect tool
           clipToolState.setState(await onClick(false));
         } else {

@@ -164,9 +164,9 @@ function Overlay() {
         draggable={false}
       />
       <ClipOverlay />
-      {/* 实时显示当前 tool 绘制结果的的临时画布 */}
+      {/* 显示绘制完成的 tool 绘制结果 */}
       <canvas
-        id="clip-tool-tmp-canvas"
+        id="clip-tool-drawn-canvas"
         style={{
           position: "absolute",
           left: 0,
@@ -174,9 +174,9 @@ function Overlay() {
           zIndex: 10,
         }}
       />
-      {/* 显示绘制完成的 tool 绘制结果 */}
+      {/* 实时显示当前 tool 绘制结果的的临时画布 */}
       <canvas
-        id="clip-tool-drawn-canvas"
+        id="clip-tool-tmp-canvas"
         style={{
           position: "absolute",
           left: 0,

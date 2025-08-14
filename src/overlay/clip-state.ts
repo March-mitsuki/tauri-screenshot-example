@@ -96,15 +96,13 @@ export type ClipToolRectData = {
   strokeStyle: string;
 };
 export type ClipToolStateData = {
-  tool?: ClipToolName;
-  data?: ClipToolLineData | ClipToolRectData;
+  currentTool?: ClipToolName;
+  toolData: Record<ClipToolName, ClipToolLineData | ClipToolRectData>;
 };
-export const clipToolState = new State<ClipToolStateData>({});
 export type DrawnToolStateData = {
   tool: ClipToolName;
   data: ClipToolLineData | ClipToolRectData;
 }[];
-export const drawnToolState = new State<DrawnToolStateData>([]);
 export class ClipToolHelper {
   static makeClipToolBtnId(name: ClipToolName) {
     return `clip-tool-btn-${name}`;
@@ -184,3 +182,16 @@ export class ClipToolHelper {
     ctx.restore();
   }
 }
+export const clipToolState = new State<ClipToolStateData>({
+  toolData: {
+    line: {
+      lineWidth: ClipToolHelper.getDefaultLineWidth(),
+      strokeStyle: ClipToolHelper.getDefaultStrokeStyle(),
+    },
+    rect: {
+      lineWidth: ClipToolHelper.getDefaultLineWidth(),
+      strokeStyle: ClipToolHelper.getDefaultStrokeStyle(),
+    },
+  },
+});
+export const drawnToolState = new State<DrawnToolStateData>([]);
