@@ -26,7 +26,7 @@ image = "0.25"
 xcap = "0.6"
 base64 = "0.22"
 anyhow = "1"
-rdev = { git = "https://github.com/rustdesk-org/rdev" }
+rdev = { git = "https://github.com/March-mitsuki/rdev" }
 tauri-plugin-fs = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-clipboard-manager = "2"
