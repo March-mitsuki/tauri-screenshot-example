@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { cloneElement, useEffect, useState } from "react";
 import { Image as TauriImage } from "@tauri-apps/api/image";
 import { save } from "@tauri-apps/plugin-dialog";
 import { writeFile } from "@tauri-apps/plugin-fs";
@@ -36,6 +36,7 @@ import { writeImage } from "@tauri-apps/plugin-clipboard-manager";
 import { DotSpinner } from "../components/dot-spinner";
 import { TauriBroadcast } from "../common/tauri-broadcast";
 import { listen } from "@tauri-apps/api/event";
+import { Tooltip } from "../components/tooltip";
 
 const STYLES_CONSTS = {
   toolsContainerPaddingX: 4,
@@ -290,7 +291,21 @@ function onClipEnd() {
     displaysState.data
   );
   if (!hitDisplay) {
-    screenLogSignal.emit("onClipEnd: hitDisplay is null");
+    screenLogSignal.emit(
+      `onClipEnd: hitDisplay is null. clipArea: ${JSON.stringify(
+        clipArea,
+        null,
+        2
+      )}, rightBottom: ${JSON.stringify(
+        rightBottom,
+        null,
+        2
+      )}, rightBottomGlobal: ${JSON.stringify(
+        rightBottomGlobal,
+        null,
+        2
+      )}, Displays: ${JSON.stringify(displaysState.data, null, 2)}`
+    );
     return;
   }
   if (hitDisplay.id === screenshotMetaState.data!.id) {
@@ -857,44 +872,72 @@ function ScreenshotUI() {
 
         <div className="clip-tool-separator" />
 
-        <button
-          className="clip-tool-btn clip-tool-btn-tip"
-          data-tooltip="Save"
-          onClick={async () => {
-            try {
-              const clippedImg = await getClippedImage("dataUrl");
-              const targetPath = await save({
-                defaultPath: `${Date.now()}.jpg`,
-                filters: [
-                  {
-                    name: "JPEG Image",
-                    extensions: ["jpg", "jpeg"],
-                  },
-                ],
-              });
-              if (!targetPath) return;
-              await writeFile(targetPath, dataUrlToBytes(clippedImg));
+        <TooltipBtn tooltip="Save">
+          <button
+            className="clip-tool-btn"
+            onClick={async () => {
+              try {
+                const clippedImg = await getClippedImage("dataUrl");
+                const targetPath = await save({
+                  defaultPath: `${Date.now()}.jpg`,
+                  filters: [
+                    {
+                      name: "JPEG Image",
+                      extensions: ["jpg", "jpeg"],
+                    },
+                  ],
+                });
+                if (!targetPath) return;
+                await writeFile(targetPath, dataUrlToBytes(clippedImg));
+                TauriBroadcast.broadcast("clip-cancel");
+              } catch (error) {
+                screenLogSignal.emit(`Failed to save clipped image: ${error}`);
+              }
+            }}
+          >
+            <DownloadIcon />
+          </button>
+        </TooltipBtn>
+        <TooltipBtn tooltip="Cancel">
+          <button
+            className="clip-tool-btn"
+            onClick={async () => {
               TauriBroadcast.broadcast("clip-cancel");
-            } catch (error) {
-              screenLogSignal.emit(`Failed to save clipped image: ${error}`);
-            }
-          }}
-        >
-          <DownloadIcon />
-        </button>
-        <button
-          className="clip-tool-btn clip-tool-btn-tip"
-          data-tooltip="Cancel"
-          onClick={async () => {
-            TauriBroadcast.broadcast("clip-cancel");
-          }}
-        >
-          <CrossIcon />
-        </button>
+            }}
+          >
+            <CrossIcon />
+          </button>
+        </TooltipBtn>
         <CopyToClipboardBtn />
       </div>
       <ToolSettings />
     </>
+  );
+}
+
+function TooltipBtn({
+  children,
+  tooltip,
+}: {
+  children: React.ReactElement<any>;
+  tooltip: React.ReactElement<any> | string;
+}) {
+  const [isHover, setIsHover] = useState(false);
+  const content = typeof tooltip === "string" ? <>{tooltip}</> : tooltip;
+
+  return (
+    <Tooltip visible={isHover} content={content}>
+      {cloneElement(children, {
+        onMouseEnter: (e: MouseEvent) => {
+          setIsHover(true);
+          children.props.onMouseEnter?.(e);
+        },
+        onMouseLeave: (e: MouseEvent) => {
+          setIsHover(false);
+          children.props.onMouseLeave?.(e);
+        },
+      })}
+    </Tooltip>
   );
 }
 
@@ -946,18 +989,6 @@ function LineToolSettings() {
         },
       },
     });
-    // clipToolState.setState((prev) => {
-    //   return {
-    //     ...prev,
-    //     toolData: {
-    //       ...prev.toolData,
-    //       line: {
-    //         ...prev.toolData.line,
-    //         lineWidth: width,
-    //       },
-    //     },
-    //   };
-    // });
   };
 
   return (
@@ -993,18 +1024,6 @@ function LineToolSettings() {
         onChange={(e) => {
           const color = e.currentTarget.value;
           if (color) {
-            // clipToolState.setState((prev) => {
-            //   return {
-            //     ...prev,
-            //     toolData: {
-            //       ...prev.toolData,
-            //       line: {
-            //         ...prev.toolData.line,
-            //         strokeStyle: color,
-            //       },
-            //     },
-            //   };
-            // });
             TauriBroadcast.broadcast("clip-tool-select", {
               currentTool: "line",
               toolData: {
@@ -1041,18 +1060,6 @@ function RectToolSettings() {
   }, []);
 
   const setLineWidth = (width: number) => {
-    // clipToolState.setState((prev) => {
-    //   return {
-    //     ...prev,
-    //     toolData: {
-    //       ...prev.toolData,
-    //       rect: {
-    //         ...prev.toolData.rect,
-    //         lineWidth: width,
-    //       },
-    //     },
-    //   };
-    // });
     TauriBroadcast.broadcast("clip-tool-select", {
       currentTool: "rect",
       toolData: {
@@ -1098,18 +1105,6 @@ function RectToolSettings() {
         onChange={(e) => {
           const color = e.currentTarget.value;
           if (color) {
-            // clipToolState.setState((prev) => {
-            //   return {
-            //     ...prev,
-            //     toolData: {
-            //       ...prev.toolData,
-            //       rect: {
-            //         ...prev.toolData.rect,
-            //         strokeStyle: color,
-            //       },
-            //     },
-            //   };
-            // });
             TauriBroadcast.broadcast("clip-tool-select", {
               currentTool: "rect",
               toolData: {
@@ -1153,10 +1148,10 @@ function ToolSettings() {
         const toolBtn = document.getElementById(
           ClipToolHelper.makeClipToolBtnId(data.currentTool)
         ) as HTMLButtonElement;
-        toolBtn.className = "clip-tool-btn clip-tool-btn-tip hover";
+        toolBtn.classList.add("hover");
         const otherBtns = ClipToolHelper.getOtherToolElems(data.currentTool);
         otherBtns.forEach((btn) => {
-          btn.className = "clip-tool-btn clip-tool-btn-tip";
+          btn.classList.remove("hover");
         });
 
         const toolBtnRect = toolBtn.getBoundingClientRect();
@@ -1195,7 +1190,7 @@ function ToolSettings() {
       } else {
         const otherBtns = ClipToolHelper.getOtherToolElems(data.currentTool);
         otherBtns.forEach((btn) => {
-          btn.className = "clip-tool-btn clip-tool-btn-tip";
+          btn.classList.remove("hover");
         });
         settingsContainer.style.visibility = "hidden";
       }
@@ -1248,21 +1243,45 @@ type ToolBtnProps = {
   onClick: (reqSelect: boolean) => Promise<ClipToolStateData>;
 };
 function ToolBtn({ name, tooltip, children, onClick }: ToolBtnProps) {
+  const [isHover, setIsHover] = useState(false);
+  useEffect(() => {
+    const toolBtn = document.getElementById(
+      ClipToolHelper.makeClipToolBtnId(name)
+    ) as HTMLButtonElement;
+    if (!toolBtn) {
+      screenLogSignal.emit(`Tool button with name ${name} not found`);
+      return;
+    }
+    if (isHover) {
+      toolBtn.classList.add("hover");
+    } else {
+      toolBtn.classList.remove("hover");
+    }
+  }, [isHover]);
+
   return (
-    <button
-      id={`clip-tool-btn-${name}`}
-      className="clip-tool-btn clip-tool-btn-tip"
-      data-tooltip={tooltip}
-      onClick={async () => {
-        const requestSelect = clipToolState.data.currentTool !== name;
-        const data = await onClick(requestSelect);
-        TauriBroadcast.broadcast("clip-tool-select", {
-          ...data,
-        });
-      }}
-    >
-      {children}
-    </button>
+    <Tooltip visible={isHover} content={tooltip}>
+      <button
+        id={`clip-tool-btn-${name}`}
+        className="clip-tool-btn"
+        data-tooltip={tooltip}
+        onClick={async () => {
+          const requestSelect = clipToolState.data.currentTool !== name;
+          const data = await onClick(requestSelect);
+          TauriBroadcast.broadcast("clip-tool-select", {
+            ...data,
+          });
+        }}
+        onMouseEnter={() => {
+          setIsHover(true);
+        }}
+        onMouseLeave={() => {
+          setIsHover(false);
+        }}
+      >
+        {children}
+      </button>
+    </Tooltip>
   );
 }
 
@@ -1270,29 +1289,30 @@ function CopyToClipboardBtn() {
   const [loading, setLoading] = useState(false);
 
   return (
-    <button
-      className="clip-tool-btn clip-tool-btn-tip"
-      data-tooltip="Copy to clipboard"
-      disabled={loading}
-      onClick={async () => {
-        if (loading) return;
+    <TooltipBtn tooltip="Copy to clipboard">
+      <button
+        className="clip-tool-btn"
+        disabled={loading}
+        onClick={async () => {
+          if (loading) return;
 
-        try {
-          setLoading(true);
-          const clippedImg = await getClippedImage("tauri-img");
-          if (!clippedImg) {
-            return;
+          try {
+            setLoading(true);
+            const clippedImg = await getClippedImage("tauri-img");
+            if (!clippedImg) {
+              return;
+            }
+            await writeImage(clippedImg);
+            await TauriBroadcast.broadcast("clip-cancel");
+          } catch (error) {
+            screenLogSignal.emit(`Failed to copy clipped image: ${error}`);
+          } finally {
+            setLoading(false);
           }
-          await writeImage(clippedImg);
-          await TauriBroadcast.broadcast("clip-cancel");
-        } catch (error) {
-          screenLogSignal.emit(`Failed to copy clipped image: ${error}`);
-        } finally {
-          setLoading(false);
-        }
-      }}
-    >
-      {loading ? <DotSpinner /> : <CheckIcon />}
-    </button>
+        }}
+      >
+        {loading ? <DotSpinner /> : <CheckIcon />}
+      </button>
+    </TooltipBtn>
   );
 }

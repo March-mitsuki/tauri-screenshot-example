@@ -60,25 +60,3 @@ input[type="color"] {
     pointer-events: none;
   }
 }
-
-.clip-tool-btn-tip {
-  &::after {
-    visibility: hidden;
-    opacity: 0;
-    content: attr(data-tooltip);
-    position: absolute;
-    background-color: var(--toolbar-tooltip-bg);
-    color: var(--toolbar-tooltip-color-text);
-    border-radius: 4px;
-    padding: 4px 8px;
-    white-space: nowrap;
-    z-index: 20;
-    font-size: 12px;
-    top: -28px;
-    transition: opacity 300ms cubic-bezier(0.23, 1, 0.32, 1);
-  }
-  &:hover::after {
-    opacity: 1;
-    visibility: visible;
-  }
-}
