@@ -76,13 +76,6 @@ async fn capture_all_screens() -> Result<Vec<Screenshot>> {
 async fn handle_screenshot(app: tauri::AppHandle) -> Result<()> {
     let screenshots = capture_all_screens().await?;
     let state = app.state::<Mutex<AppState>>();
-    {
-        let mut state = state.lock().unwrap();
-        if state.is_screenshotting {
-            return Ok(());
-        }
-        state.is_screenshotting = true;
-    }
 
     for (idx, screenshot) in screenshots.iter().enumerate() {
         let window_label = format!("screenshot_overlay_{}", idx);
@@ -179,10 +172,23 @@ fn setup_desktop_shortcuts(app: &mut tauri::App) -> Result<()> {
     app.global_shortcut()
         .on_shortcut("CmdOrCtrl+Shift+S", |app, _shortcut, event| {
             if let ShortcutState::Pressed = event.state {
+                println!("Global shortcut CmdOrCtrl+Shift+S pressed");
+                let state = app.state::<Mutex<AppState>>();
+                let mut state = state.lock().unwrap();
+                if state.is_screenshotting {
+                    return;
+                }
                 println!("Capturing screenshot...");
+                state.is_screenshotting = true;
                 let app_handle = app.clone();
+                let app_handle_2 = app.clone();
                 tauri::async_runtime::spawn(async move {
                     if let Err(e) = handle_screenshot(app_handle).await {
+                        // If error, reset is_screenshotting state here
+                        // If ok, is_screenshotting will be reset inside handle_screenshot()
+                        let state = app_handle_2.state::<Mutex<AppState>>();
+                        let mut state = state.lock().unwrap();
+                        state.is_screenshotting = false;
                         println!("Error capturing screenshot: {}", e);
                     }
                 });
