@@ -1,8 +1,7 @@
-use std::{collections::HashMap, sync::Mutex};
+use std::{collections::HashMap, io::Cursor, sync::Mutex};
 
 use anyhow::Result;
 use base64::{engine::general_purpose, Engine};
-use image::{codecs::jpeg::JpegEncoder, DynamicImage};
 use serde::{Deserialize, Serialize};
 use tauri::{Emitter, Manager};
 
@@ -33,14 +32,15 @@ pub struct Point {
     x: i32,
     y: i32,
 }
-
+#[derive(Serialize, Clone)]
 pub struct AppState {
     screenshots: HashMap<String, Screenshot>,
     displays: Vec<Display>,
     is_screenshotting: bool,
+    screenshot_format: String,
 }
 
-async fn capture_all_screens() -> Result<Vec<Screenshot>> {
+async fn capture_all_screens(screenshot_format: String) -> Result<Vec<Screenshot>> {
     let monitors = xcap::Monitor::all()?;
 
     let mut screenshots = Vec::new();
@@ -48,27 +48,33 @@ async fn capture_all_screens() -> Result<Vec<Screenshot>> {
     for monitor in monitors {
         let img = monitor.capture_image()?;
 
-        let rgb_img = DynamicImage::ImageRgba8(img.clone()).to_rgb8();
-        let mut jpeg_buf = Vec::new();
-        let mut encoder = JpegEncoder::new_with_quality(&mut jpeg_buf, 85);
-        encoder.encode(
-            &rgb_img,
-            rgb_img.width(),
-            rgb_img.height(),
-            image::ExtendedColorType::Rgb8,
-        )?;
-
-        let base64_data = general_purpose::STANDARD.encode(&jpeg_buf);
+        let base64_data: String;
+        match screenshot_format.as_str() {
+            "jpeg" => {
+                let rgb_img = image::DynamicImage::ImageRgba8(img.clone()).to_rgb8();
+                let mut jpeg_buf = Cursor::new(Vec::new());
+                rgb_img.write_to(&mut jpeg_buf, image::ImageFormat::Jpeg)?;
+                base64_data = general_purpose::STANDARD.encode(&jpeg_buf.into_inner());
+            }
+            "png" => {
+                let mut png_buf = Cursor::new(Vec::new());
+                img.write_to(&mut png_buf, image::ImageFormat::Png)?;
+                base64_data = general_purpose::STANDARD.encode(&png_buf.into_inner());
+            }
+            _ => {
+                return Err(anyhow::anyhow!("Unsupported screenshot format"));
+            }
+        }
 
         screenshots.push(Screenshot {
             id: monitor.id()?,
             name: monitor.name()?,
             x: monitor.x()?,
             y: monitor.y()?,
-            width: monitor.width()?,
-            height: monitor.height()?,
+            width: img.width(),   // 使用实际捕获的像素尺寸
+            height: img.height(), // 使用实际捕获的像素尺寸
             image_data: base64_data,
-            format: "jpeg".into(),
+            format: screenshot_format.clone(),
             scale: monitor.scale_factor()?,
         });
     }
@@ -77,8 +83,9 @@ async fn capture_all_screens() -> Result<Vec<Screenshot>> {
 }
 
 async fn handle_screenshot(app: tauri::AppHandle) -> Result<()> {
-    let screenshots = capture_all_screens().await?;
     let state = app.state::<Mutex<AppState>>();
+    let screenshot_format = state.lock().unwrap().screenshot_format.clone();
+    let screenshots = capture_all_screens(screenshot_format).await?;
 
     for (idx, screenshot) in screenshots.iter().enumerate() {
         let window_label = format!("screenshot_overlay_{}", idx);
@@ -125,8 +132,34 @@ async fn handle_screenshot(app: tauri::AppHandle) -> Result<()> {
 }
 
 #[tauri::command]
-async fn freeze_screens() -> Result<Vec<Screenshot>, String> {
-    capture_all_screens().await.map_err(|e| e.to_string())
+fn get_screenshot_format(app: tauri::AppHandle) -> Result<String, String> {
+    let state = app.state::<Mutex<AppState>>();
+    let state = state.lock().unwrap();
+    Ok(state.screenshot_format.clone())
+}
+
+#[tauri::command]
+fn set_screenshot_format(app: tauri::AppHandle, format: String) -> Result<String, String> {
+    let state = app.state::<Mutex<AppState>>();
+    let mut state = state.lock().unwrap();
+    if format != "jpeg" && format != "png" {
+        return Err("Unsupported screenshot format".to_string());
+    }
+    state.screenshot_format = format.clone();
+    Ok(format)
+}
+
+#[tauri::command]
+async fn freeze_screens(app: tauri::AppHandle) -> Result<Vec<Screenshot>, String> {
+    let screenshot_format = app
+        .state::<Mutex<AppState>>()
+        .lock()
+        .unwrap()
+        .screenshot_format
+        .clone();
+    capture_all_screens(screenshot_format)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -233,6 +266,7 @@ pub fn run() {
                     screenshots: HashMap::new(),
                     displays: get_all_displays()?,
                     is_screenshotting: false,
+                    screenshot_format: String::from("jpeg"),
                 }));
                 setup_desktop_shortcuts(app)?;
 
@@ -255,6 +289,8 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            get_screenshot_format,
+            set_screenshot_format,
             freeze_screens,
             get_screenshot_data,
             get_screenshots_data,

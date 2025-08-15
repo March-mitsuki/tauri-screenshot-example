@@ -27,15 +27,19 @@ export function drawScreenshot(
       return;
     }
 
-    const img = new Image();
-    img.src = `data:image/jpeg;base64,${screen.image_data}`;
-    img.onload = () => {
-      ctx.drawImage(img, 0, 0, screen.width, screen.height);
-      resolve();
-    };
-    img.onerror = (error) => {
-      reject(error);
-    };
+    if (screen.format === "jpeg" || screen.format === "png") {
+      const img = new Image();
+      img.src = `data:image/${screen.format};base64,${screen.image_data}`;
+      img.onload = () => {
+        ctx.drawImage(img, 0, 0, screen.width, screen.height);
+        resolve();
+      };
+      img.onerror = (error) => {
+        reject(error);
+      };
+    } else {
+      reject(new Error("Unsupported screenshot format"));
+    }
   });
 }
 

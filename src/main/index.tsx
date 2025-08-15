@@ -1,8 +1,20 @@
 import ReactDOM from "react-dom/client";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import "./index.css";
+import { useEffect, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 
 function Main() {
+  const [screenshotFmt, setScreenshotFmt] = useState<string>();
+
+  const getScreenshotFormat = async () => {
+    const fmt = await invoke<string>("get_screenshot_format");
+    setScreenshotFmt(fmt);
+  };
+  useEffect(() => {
+    getScreenshotFormat();
+  }, []);
+
   return (
     <div className="main-container">
       <div className="screenshot-icon">📸</div>
@@ -10,6 +22,30 @@ function Main() {
       <p className="subtitle">
         A screenshot tool example with a good multi-display support.
       </p>
+
+      <div>Screenshot Format: {screenshotFmt}</div>
+      <div>
+        <select
+          name="screenshot_format"
+          id="screenshot_format"
+          value={screenshotFmt}
+          onChange={async (e) => {
+            try {
+              const newFormat = e.target.value;
+              const result = await invoke<string>("set_screenshot_format", {
+                format: newFormat,
+              });
+              setScreenshotFmt(result);
+            } catch (error) {
+              console.error("Error setting screenshot format:", error);
+            }
+          }}
+        >
+          <option value="jpeg">JPEG</option>
+          <option value="png">PNG</option>
+          <option value="raw">RAW</option>
+        </select>
+      </div>
 
       <div className="shortcut-display">
         Press Cmd + Shift + S to take a screenshot <br />
