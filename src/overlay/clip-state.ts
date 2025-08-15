@@ -11,6 +11,7 @@ export type Screenshot = {
   height: number;
   image_data: string;
   format: string;
+  scale: number;
 };
 
 export type ClipStateData = {

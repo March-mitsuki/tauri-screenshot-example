@@ -16,6 +16,7 @@ pub struct Screenshot {
     height: u32,
     image_data: String, // Base64 encoded data
     format: String,
+    scale: f32,
 }
 #[derive(Serialize, Clone)]
 pub struct Display {
@@ -25,6 +26,7 @@ pub struct Display {
     y: i32,
     width: u32,
     height: u32,
+    scale: f32,
 }
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Point {
@@ -67,6 +69,7 @@ async fn capture_all_screens() -> Result<Vec<Screenshot>> {
             height: monitor.height()?,
             image_data: base64_data,
             format: "jpeg".into(),
+            scale: monitor.scale_factor()?,
         });
     }
 
@@ -210,6 +213,7 @@ fn get_all_displays() -> Result<Vec<Display>> {
             y: m.y()?,
             width: m.width()?,
             height: m.height()?,
+            scale: m.scale_factor()?,
         });
     }
     Ok(displays)

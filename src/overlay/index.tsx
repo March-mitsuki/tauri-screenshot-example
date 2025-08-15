@@ -46,6 +46,7 @@ function Overlay() {
         width: currentScreenshot.width,
         height: currentScreenshot.height,
         format: currentScreenshot.format,
+        scale: currentScreenshot.scale,
       });
       screenshotsState.setState(screenshots);
     };

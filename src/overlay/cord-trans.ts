@@ -15,7 +15,7 @@ export type Display = {
   y: number; // 该屏在桌面空间中的左上角 Y（逻辑像素）
   width: number; // 屏幕宽（逻辑像素）
   height: number; // 屏幕高（逻辑像素）
-  scale?: number; // 可选：缩放系数（物理像素 = 逻辑像素 * scale）
+  scale: number; // 可选：缩放系数（物理像素 = 逻辑像素 * scale）
 };
 
 // 覆盖窗体相对其所属屏幕原点的偏移（通常 0,0；如果你有边框或外层容器偏移可填）
@@ -243,6 +243,7 @@ function screenshotToDisplay(screenshot: Screenshot): Display {
     y: screenshot.y,
     width: screenshot.width,
     height: screenshot.height,
+    scale: screenshot.scale,
   };
 }
 
