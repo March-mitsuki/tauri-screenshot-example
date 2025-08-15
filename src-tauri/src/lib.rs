@@ -13,6 +13,8 @@ pub struct Screenshot {
     y: i32,
     width: u32,
     height: u32,
+    monitor_width: u32,
+    monitor_height: u32,
     image_data: String, // Base64 encoded data
     format: String,
     scale: f32,
@@ -73,6 +75,8 @@ async fn capture_all_screens(screenshot_format: String) -> Result<Vec<Screenshot
             y: monitor.y()?,
             width: img.width(),   // 使用实际捕获的像素尺寸
             height: img.height(), // 使用实际捕获的像素尺寸
+            monitor_width: monitor.width()?,
+            monitor_height: monitor.height()?,
             image_data: base64_data,
             format: screenshot_format.clone(),
             scale: monitor.scale_factor()?,

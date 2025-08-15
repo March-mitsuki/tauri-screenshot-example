@@ -256,6 +256,15 @@ function isGlobalPointInDisplay(global: Point, display: Display): boolean {
   );
 }
 
+function scalePoint(point?: Point, scale?: number): Point | undefined {
+  if (!point) return undefined;
+  if (typeof scale !== "number") return point;
+  return {
+    x: point.x * scale,
+    y: point.y * scale,
+  };
+}
+
 const coordTrans = {
   getDesktopBounds,
   clientToGlobal,
@@ -265,5 +274,6 @@ const coordTrans = {
   normalizedToGlobal,
   screenshotToDisplay,
   isGlobalPointInDisplay,
+  scalePoint,
 };
 export default coordTrans;

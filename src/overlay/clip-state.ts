@@ -9,6 +9,8 @@ export type Screenshot = {
   y: number;
   width: number;
   height: number;
+  monitor_width: number;
+  monitor_height: number;
   image_data: string;
   format: string;
   scale: number;

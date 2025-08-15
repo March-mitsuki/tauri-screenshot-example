@@ -58,8 +58,14 @@ async function getClippedImage(mode: "buffer"): Promise<ArrayBuffer>;
 async function getClippedImage(mode: "tauri-img"): Promise<TauriImage>;
 async function getClippedImage(mode: "dataUrl" | "buffer" | "tauri-img") {
   const clipArea = detectArea(
-    clipState.data.startPointGlobalNotNormalized,
-    clipState.data.endPointGlobalNotNormalized
+    coordTrans.scalePoint(
+      clipState.data.startPointGlobalNotNormalized,
+      screenshotMetaState.data!.scale
+    ),
+    coordTrans.scalePoint(
+      clipState.data.endPointGlobalNotNormalized,
+      screenshotMetaState.data!.scale
+    )
   );
   if (!clipArea) {
     screenLogSignal.emit("clip area is empty, not clipping");
@@ -114,7 +120,8 @@ async function getClippedImage(mode: "dataUrl" | "buffer" | "tauri-img") {
         const data = toolResult.data as ClipToolLineData;
         resultCanvasCtx.save();
 
-        resultCanvasCtx.lineWidth = data.lineWidth;
+        resultCanvasCtx.lineWidth =
+          data.lineWidth * screenshotMetaState.data!.scale;
         resultCanvasCtx.strokeStyle = data.strokeStyle;
         const normalizedStartP = coordTrans.globalToNormalized(
           data.startPoint!,
@@ -147,7 +154,8 @@ async function getClippedImage(mode: "dataUrl" | "buffer" | "tauri-img") {
         const data = toolResult.data as ClipToolRectData;
         resultCanvasCtx.save();
 
-        resultCanvasCtx.lineWidth = data.lineWidth;
+        resultCanvasCtx.lineWidth =
+          data.lineWidth * screenshotMetaState.data!.scale;
         resultCanvasCtx.strokeStyle = data.strokeStyle;
         const normalizedStartP = coordTrans.globalToNormalized(
           data.startPoint!,
@@ -157,7 +165,13 @@ async function getClippedImage(mode: "dataUrl" | "buffer" | "tauri-img") {
           data.endPoint!,
           displaysState.data
         );
-        const area = detectArea(normalizedStartP, normalizedEndP);
+        const area = detectArea(
+          coordTrans.scalePoint(
+            normalizedStartP,
+            screenshotMetaState.data!.scale
+          ),
+          coordTrans.scalePoint(normalizedEndP, screenshotMetaState.data!.scale)
+        );
         if (!area) {
           resultCanvasCtx.restore();
           return;

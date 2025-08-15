@@ -45,6 +45,8 @@ function Overlay() {
         y: currentScreenshot.y,
         width: currentScreenshot.width,
         height: currentScreenshot.height,
+        monitor_width: currentScreenshot.monitor_width,
+        monitor_height: currentScreenshot.monitor_height,
         format: currentScreenshot.format,
         scale: currentScreenshot.scale,
       });

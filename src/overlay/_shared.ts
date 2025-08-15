@@ -1,4 +1,4 @@
-import { Screenshot } from "./clip-state";
+import { Screenshot, screenshotMetaState } from "./clip-state";
 import { Point } from "./cord-trans";
 
 export type Area2D = {
@@ -77,6 +77,10 @@ export function drawGrayOverlay(
   });
 }
 
+/**
+ * Get logical area around mouse point.
+ * Will auto-adjust for canvas scaling.
+ */
 export function getMouseAroundArea(
   canvas: HTMLCanvasElement,
   point: Point,
@@ -90,7 +94,14 @@ export function getMouseAroundArea(
   const px = Math.floor(point.x);
   const py = Math.floor(point.y);
 
-  const area = {
+  const monitorScaleFactor = screenshotMetaState.data!.scale;
+  const physicalArea = {
+    x: px * monitorScaleFactor - padding * monitorScaleFactor,
+    y: py * monitorScaleFactor - padding * monitorScaleFactor,
+    width: padding * 2 * monitorScaleFactor,
+    height: padding * 2 * monitorScaleFactor,
+  };
+  const logicalArea = {
     x: px - padding,
     y: py - padding,
     width: padding * 2,
@@ -105,18 +116,23 @@ export function getMouseAroundArea(
   };
 
   // 1) 先取原尺寸 ImageData
-  const areaData = ctx.getImageData(area.x, area.y, area.width, area.height);
+  const areaData = ctx.getImageData(
+    physicalArea.x,
+    physicalArea.y,
+    physicalArea.width,
+    physicalArea.height
+  );
 
   // 2) 原尺寸临时画布
   const srcCanvas = document.createElement("canvas");
-  srcCanvas.width = area.width;
-  srcCanvas.height = area.height;
+  srcCanvas.width = physicalArea.width;
+  srcCanvas.height = physicalArea.height;
   srcCanvas.getContext("2d")!.putImageData(areaData, 0, 0);
 
   // 3) 目标（放大）画布
   const aroundAreaCanvas = document.createElement("canvas");
-  aroundAreaCanvas.width = area.width * scale;
-  aroundAreaCanvas.height = area.height * scale;
+  aroundAreaCanvas.width = logicalArea.width * scale;
+  aroundAreaCanvas.height = logicalArea.height * scale;
 
   const aroundAreaCtx = aroundAreaCanvas.getContext("2d")!;
   aroundAreaCtx.imageSmoothingEnabled = false; // 关键：关闭插值
@@ -124,12 +140,12 @@ export function getMouseAroundArea(
     srcCanvas,
     0,
     0,
-    area.width,
-    area.height, // 源区域
+    physicalArea.width,
+    physicalArea.height, // 源区域
     0,
     0,
-    area.width * scale,
-    area.height * scale // 目标区域（放大）
+    logicalArea.width * scale,
+    logicalArea.height * scale // 目标区域（放大）
   );
 
   // 4) 画 1px 实心十字线（放大后画，更锐利）
