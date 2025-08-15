@@ -43,7 +43,6 @@ function Main() {
         >
           <option value="jpeg">JPEG</option>
           <option value="png">PNG</option>
-          <option value="raw">RAW</option>
         </select>
       </div>
 
