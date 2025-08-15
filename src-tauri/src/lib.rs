@@ -35,6 +35,7 @@ pub struct Point {
 pub struct AppState {
     screenshots: HashMap<String, Screenshot>,
     displays: Vec<Display>,
+    is_screenshotting: bool,
 }
 
 async fn capture_all_screens() -> Result<Vec<Screenshot>> {
@@ -75,6 +76,13 @@ async fn capture_all_screens() -> Result<Vec<Screenshot>> {
 async fn handle_screenshot(app: tauri::AppHandle) -> Result<()> {
     let screenshots = capture_all_screens().await?;
     let state = app.state::<Mutex<AppState>>();
+    {
+        let mut state = state.lock().unwrap();
+        if state.is_screenshotting {
+            return Ok(());
+        }
+        state.is_screenshotting = true;
+    }
 
     for (idx, screenshot) in screenshots.iter().enumerate() {
         let window_label = format!("screenshot_overlay_{}", idx);
@@ -85,15 +93,21 @@ async fn handle_screenshot(app: tauri::AppHandle) -> Result<()> {
                 .insert(window_label.clone(), screenshot.clone());
         }
 
-        // 创建覆盖窗口, 先隐藏, 前端收到数据后自己展开
-        let window = tauri::WebviewWindowBuilder::new(
-            &app,
-            window_label.clone(),
-            tauri::WebviewUrl::App("overlay.html".into()),
-        )
-        .title("Screenshot Overlay")
-        .visible(false)
-        .build()?;
+        let window: tauri::WebviewWindow;
+        if let Some(existing_window) = app.get_webview_window(&window_label) {
+            // 如果窗口已存在, 则使用现有窗口
+            window = existing_window;
+        } else {
+            // 创建覆盖窗口, 先隐藏, 前端收到数据后自己展开
+            window = tauri::WebviewWindowBuilder::new(
+                &app,
+                window_label.clone(),
+                tauri::WebviewUrl::App("overlay.html".into()),
+            )
+            .title("Screenshot Overlay")
+            .visible(false)
+            .build()?;
+        }
 
         let app_clone = app.clone();
         window.on_window_event(move |e| {
@@ -105,6 +119,7 @@ async fn handle_screenshot(app: tauri::AppHandle) -> Result<()> {
                 let state = app_clone.state::<Mutex<AppState>>();
                 let mut state = state.lock().unwrap();
                 state.screenshots.remove(&window_label);
+                state.is_screenshotting = false;
                 println!("Screenshot data removed for: {}", window_label);
             }
         });
@@ -207,6 +222,7 @@ pub fn run() {
                 app.manage(Mutex::new(AppState {
                     screenshots: HashMap::new(),
                     displays: get_all_displays()?,
+                    is_screenshotting: false,
                 }));
                 setup_desktop_shortcuts(app)?;
 
