@@ -4,6 +4,8 @@
 
 A modern screenshot application built with **Tauri 2.0** + **React** + **xcap**, featuring excellent multi-monitor and cross-screen screenshot support.
 
+Works on **Windows** and **MacOS** (⚠️MacOS is WIP!)
+
 > **⚠️ Development Environment Note**  
 > Screenshots may have a 1-2 second delay in development builds, which is normal behavior. In production builds, screenshot latency is significantly improved to 100-300ms (depending on the number of connected monitors).
 
