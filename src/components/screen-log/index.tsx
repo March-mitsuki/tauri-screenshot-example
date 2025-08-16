@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Signal } from "../../common/signal";
+import { randomToken } from "../../common/random";
 
 export const screenLogSignal = new Signal<string>();
 
@@ -9,6 +10,7 @@ export function ScreenLogRenderer() {
   useEffect(() => {
     const listener = (data: string) => {
       setLogs((prevLogs) => {
+        data = `[${randomToken(6)}] ` + data;
         if (prevLogs.length >= 100) {
           return [...prevLogs.slice(1), data];
         }

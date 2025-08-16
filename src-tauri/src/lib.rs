@@ -142,29 +142,6 @@ async fn handle_screenshot(app: tauri::AppHandle) -> Result<()> {
                 }
             }
         });
-
-        // #[cfg(target_os = "macos")]
-        // {
-        //     let window_clone = window.clone();
-        //     app.run_on_main_thread(move || {
-        //         if let Ok(ns_window_ptr) = window_clone.ns_window() {
-        //             unsafe {
-        //                 let ns_window: &NSWindow = &*(ns_window_ptr as *mut NSWindow);
-        //                 // let behavior = NSWindowCollectionBehavior::from_bits_retain(
-        //                 //     NSWindowCollectionBehavior::CanJoinAllSpaces.bits()
-        //                 //         | NSWindowCollectionBehavior::FullScreenAuxiliary.bits()
-        //                 //         | NSWindowCollectionBehavior::Full,
-        //                 // );
-
-        //                 // // 设置窗口层级到可以盖住顶部菜单和Dock
-        //                 // ns_window.setCollectionBehavior(behavior);
-        //                 ns_window.setLevel(NSScreenSaverWindowLevel);
-        //             }
-        //         } else {
-        //             eprintln!("Failed to get NSWindow pointer");
-        //         }
-        //     })?;
-        // }
     }
 
     Ok(())
@@ -180,7 +157,7 @@ fn set_overlay_mode(enable: bool) -> Result<(), String> {
             NSApplicationPresentationOptions::HideDock
                 | NSApplicationPresentationOptions::HideMenuBar
                 | NSApplicationPresentationOptions::DisableMenuBarTransparency
-                | NSApplicationPresentationOptions::DisableProcessSwitching
+            // | NSApplicationPresentationOptions::DisableProcessSwitching
             // | NSApplicationPresentationOptions::DisableAppleMenu
         } else {
             NSApplicationPresentationOptions::Default

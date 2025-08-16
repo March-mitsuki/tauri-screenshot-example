@@ -145,9 +145,6 @@ function Overlay() {
     if (platform() === "macos") {
       await invoke("set_overlay_mode", { enable: true });
     }
-    // 可能会在不同的 webviewWindow 中被设置多次
-    // 但没关系, 最后随便 focus 一个就行
-    await webviewWindow.setFocus();
   };
   useEffect(() => {
     overlayWindow();

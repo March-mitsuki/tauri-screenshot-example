@@ -1,10 +1,11 @@
 import { detectArea } from "./_shared";
-import type {
-  ClipStateData,
-  ClipToolLineData,
-  ClipToolRectData,
-  DrawnToolStateData,
-  Screenshot,
+import {
+  displaysState,
+  type ClipStateData,
+  type ClipToolLineData,
+  type ClipToolRectData,
+  type DrawnToolStateData,
+  type Screenshot,
 } from "./clip-state";
 import coordTrans, { type Display } from "./cord-trans";
 
@@ -58,9 +59,9 @@ export async function drawClipResult({
   }
 
   const displays = screenshots.map(coordTrans.screenshotToDisplay);
-  const desktopBounds = coordTrans.getDesktopBounds(displays);
-  resultCanvas.width = desktopBounds.width;
-  resultCanvas.height = desktopBounds.height;
+  const desktopBounds = displaysState.desktopBounds!;
+  resultCanvas.width = desktopBounds.width * screenshotMetaData.scale;
+  resultCanvas.height = desktopBounds.height * screenshotMetaData.scale;
   const resultCanvasCtx = resultCanvas.getContext("2d");
   if (!resultCanvasCtx) {
     throw new Error("Failed to get result canvas context");

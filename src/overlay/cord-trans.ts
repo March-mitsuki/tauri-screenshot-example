@@ -30,11 +30,18 @@ export type Point = { x: number; y: number };
 export type CoordMode = "logical" | "physical";
 export type ConvertOptions = { mode?: CoordMode };
 
+export type DesktopBounds = {
+  originX: number;
+  originY: number;
+  width: number;
+  height: number;
+};
+
 /**
  * 计算"合并桌面"的起点与尺寸（把所有屏幕包起来的外接矩形）
  * 保持原始显示器坐标系，不做归一化处理
  */
-function getDesktopBounds(displays: Display[]) {
+function getDesktopBounds(displays: Display[]): DesktopBounds {
   if (displays.length === 1) {
     return {
       originX: displays[0].x,
@@ -235,14 +242,16 @@ function normalizedToGlobal(
   };
 }
 
-function screenshotToDisplay(screenshot: Screenshot): Display {
+function screenshotToDisplay(
+  screenshot: Omit<Screenshot, "image_data">
+): Display {
   return {
     id: screenshot.id,
     name: screenshot.name,
     x: screenshot.x,
     y: screenshot.y,
-    width: screenshot.width,
-    height: screenshot.height,
+    width: screenshot.monitor_width,
+    height: screenshot.monitor_height,
     scale: screenshot.scale,
   };
 }

@@ -39,6 +39,7 @@ import { Tooltip } from "../components/tooltip";
 import { getClipResult } from "./draw-result";
 import { cacheDir, join } from "@tauri-apps/api/path";
 import { randomToken } from "../common/random";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 
 const STYLES_CONSTS = {
   toolsContainerPaddingX: 4,
@@ -128,19 +129,19 @@ function onClipEnd() {
   );
   if (!hitDisplay) {
     screenLogSignal.emit(
-      `onClipEnd: hitDisplay is null. clipArea: ${JSON.stringify(
+      `onClipEnd: hitDisplay is null | clipArea: ${JSON.stringify(
         clipArea,
         null,
         2
-      )}, rightBottom: ${JSON.stringify(
+      )} | rightBottom: ${JSON.stringify(
         rightBottom,
         null,
         2
-      )}, rightBottomGlobal: ${JSON.stringify(
+      )} | rightBottomGlobal: ${JSON.stringify(
         rightBottomGlobal,
         null,
         2
-      )}, Displays: ${JSON.stringify(displaysState.data, null, 2)}`
+      )} | Displays: ${JSON.stringify(displaysState.data, null, 2)}`
     );
     return;
   }
@@ -305,8 +306,19 @@ function handleInvokeClipToolEnd(): boolean {
   return false;
 }
 
-listen("mouse-move", (e) => {
+listen("mouse-move", async (e) => {
   const p = e.payload as Point;
+  const desktopBounds = displaysState.desktopBounds;
+  if (!desktopBounds) return;
+  if (
+    p.x < desktopBounds.originX ||
+    p.y < desktopBounds.originY ||
+    p.x > desktopBounds.originX + desktopBounds.width ||
+    p.y > desktopBounds.originY + desktopBounds.height
+  ) {
+    return;
+  }
+
   mousePointState.setState(p);
   if (clipState.isClipping && clipState.startPoint) {
     clipState.setClipEnd(
@@ -316,6 +328,37 @@ listen("mouse-move", (e) => {
         displaysState.data
       )
     );
+  }
+  const hitDisplay = coordTrans.hitTestDisplay(p, displaysState.data);
+  if (!hitDisplay) {
+    screenLogSignal.emit(
+      `onMouseMove: hitDisplay is null | mousePoint: ${JSON.stringify(
+        p,
+        null,
+        2
+      )} | displays: ${JSON.stringify(displaysState.data, null, 2)}`
+    );
+    return;
+  }
+  if (!screenshotMetaState.data) {
+    screenLogSignal.emit("onMouseMove: screenshotMetaState.data is null");
+    return;
+  }
+  if (hitDisplay.id === screenshotMetaState.data.id) {
+    const webviewWindow = getCurrentWebviewWindow();
+    const isFocused = await webviewWindow.isFocused();
+    if (!isFocused) {
+      screenLogSignal.emit(
+        `onMouseMove: will focus ${screenshotMetaState.data.name}`
+      );
+      try {
+        await webviewWindow.setFocus();
+      } catch (error) {
+        screenLogSignal.emit(
+          `onMouseMove: failed to focus ${screenshotMetaState.data.name} | error: ${error}`
+        );
+      }
+    }
   }
 });
 type MouseButton = "left" | "right";
@@ -346,13 +389,14 @@ listen("mouse-btn-release", (e) => {
 TauriBroadcast.listen("clip-start", () => {
   setClipStartState();
 });
-TauriBroadcast.listen("clip-end", (data) => {
+TauriBroadcast.listen("clip-end", () => {
   setClipEndState();
   // displayId 是用户点击的屏幕的 ID
-  // 这里过滤掉其他的是因为只需要做一次计算就够了
-  if (data.displayId === screenshotMetaState.data?.id) {
-    onClipEnd();
-  }
+  // // 这里过滤掉其他的是因为只需要做一次计算就够了
+  // if (data.displayId === screenshotMetaState.data?.id) {
+  //   onClipEnd();
+  // }
+  onClipEnd();
 });
 TauriBroadcast.listen("clip-end-current-display", (data) => {
   // displayId 是用户选定区域最终右下角坐标所在的显示器的 ID
@@ -494,6 +538,9 @@ export function ClipOverlay() {
 
   return (
     <>
+      {/* For debug */}
+      <CoordInfo />
+
       <canvas
         id="clip-overlay-canvas"
         style={{
@@ -518,9 +565,9 @@ export function ClipOverlay() {
 function ScreenshotUI() {
   useEffect(() => {
     // ===== pixel info =====
-    const desktopBounds = coordTrans.getDesktopBounds(displaysState.data);
     const drawPixelInfo = () => {
       try {
+        const desktopBounds = displaysState.desktopBounds!;
         const container = document.getElementById(
           "pixel-info-container"
         ) as HTMLDivElement;
@@ -532,7 +579,9 @@ function ScreenshotUI() {
         const globalPoint = mousePointState.data;
         if (!globalPoint) return;
 
-        const thisDisplayData = screenshotMetaState.data!;
+        const thisDisplayData = coordTrans.screenshotToDisplay(
+          screenshotMetaState.data!
+        );
         const clientPoint = coordTrans.globalToClient(
           globalPoint,
           { displayId: thisDisplayData.id },
@@ -619,6 +668,8 @@ function ScreenshotUI() {
         mousePointDiv.textContent = `(${globalPoint.x}, ${globalPoint.y})`;
         mousePointRgbDiv.textContent = `RGB: ${mousePointRGB.r}, ${mousePointRGB.g}, ${mousePointRGB.b}`;
         mousePointHexDiv.textContent = `HEX: ${rgbToHex(mousePointRGB)}`;
+      } catch (error) {
+        screenLogSignal.emit(`drawPixelInfo error: ${error}`);
       } finally {
         requestAnimationFrame(drawPixelInfo);
       }
@@ -1185,5 +1236,53 @@ function CopyToClipboardBtn() {
         {loading ? <DotSpinner /> : <CheckIcon />}
       </button>
     </TooltipBtn>
+  );
+}
+
+function CoordInfo() {
+  const [globalPoint, setGlobalPoint] = useState<Point>({ x: 0, y: 0 });
+  const [clientPoint, setClientPoint] = useState<Point>({ x: 0, y: 0 });
+  const [localPoint, setLocalPoint] = useState<Point>({ x: 0, y: 0 });
+
+  useEffect(() => {
+    const listenMouseState = (point?: Point) => {
+      if (!point) return;
+      setGlobalPoint(point);
+      setClientPoint(
+        coordTrans.globalToClient(
+          point,
+          { displayId: screenshotMetaState.data!.id },
+          displaysState.data
+        )
+      );
+    };
+    const listenMouseMove = (e: MouseEvent) => {
+      setLocalPoint({ x: e.clientX, y: e.clientY });
+    };
+
+    mousePointState.subscribe(listenMouseState);
+    window.addEventListener("mousemove", listenMouseMove);
+
+    return () => {
+      mousePointState.unsubscribe(listenMouseState);
+      window.removeEventListener("mousemove", listenMouseMove);
+    };
+  }, []);
+
+  return (
+    <div
+      style={{
+        position: "absolute",
+        zIndex: 30,
+        left: "5rem",
+        top: "5rem",
+        color: "orange",
+      }}
+    >
+      <div>Name: {screenshotMetaState.data?.name}</div>
+      <div>Global: {`(${globalPoint.x}, ${globalPoint.y})`}</div>
+      <div>Client: {`(${clientPoint.x}, ${clientPoint.y})`}</div>
+      <div>Local: {`(${localPoint.x}, ${localPoint.y})`}</div>
+    </div>
   );
 }

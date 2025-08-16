@@ -1,6 +1,6 @@
 import { State } from "../common/state";
 import { detectArea } from "./_shared";
-import coordTrans, { Display, Point } from "./cord-trans";
+import coordTrans, { DesktopBounds, Display, Point } from "./cord-trans";
 
 export type Screenshot = {
   id: number;
@@ -78,13 +78,24 @@ class ClipState extends State<ClipStateData> {
   }
 }
 
+class DisplayState extends State<Display[]> {
+  desktopBounds?: DesktopBounds;
+
+  constructor() {
+    super([]);
+  }
+}
+
 export const screenshotMetaState = new State<
   Omit<Screenshot, "image_data"> | undefined
 >(undefined);
 export const screenshotsState = new State<Record<string, Screenshot>>({});
 export const mousePointState = new State<Point | undefined>(undefined);
-export const displaysState = new State<Display[]>([]);
 export const clipState = new ClipState();
+export const displaysState = new DisplayState();
+displaysState.subscribe((data) => {
+  displaysState.desktopBounds = coordTrans.getDesktopBounds(data);
+});
 
 export const CLIP_TOOL_NAMES = ["line", "rect"] as const;
 export type ClipToolName = (typeof CLIP_TOOL_NAMES)[number];
