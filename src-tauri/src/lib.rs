@@ -345,10 +345,12 @@ pub fn run() {
                                     y: y as i32,
                                 },
                             );
-                        } else if let rdev::EventType::ButtonPress(rdev::Button::Left) =
-                            e.event_type
-                        {
-                            let _ = app_clone.emit("mouse-button-press", "left");
+                        }
+                        if let rdev::EventType::ButtonPress(rdev::Button::Left) = e.event_type {
+                            let _ = app_clone.emit("mouse-btn-press", "left");
+                        }
+                        if let rdev::EventType::ButtonRelease(rdev::Button::Left) = e.event_type {
+                            let _ = app_clone.emit("mouse-btn-release", "left");
                         }
                     });
                 });

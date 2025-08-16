@@ -1,7 +1,7 @@
 import { cloneElement, useEffect, useState } from "react";
 import { Image as TauriImage } from "@tauri-apps/api/image";
 import { save } from "@tauri-apps/plugin-dialog";
-import { writeFile } from "@tauri-apps/plugin-fs";
+import { writeFile, remove, BaseDirectory } from "@tauri-apps/plugin-fs";
 import coordTrans, { Point } from "./cord-trans";
 import {
   clipToolState,
@@ -9,14 +9,13 @@ import {
   clipState,
   displaysState,
   mousePointState,
-  Screenshot,
   screenshotMetaState,
-  screenshotsState,
   ClipToolLineData,
   ClipToolHelper,
   ClipToolRectData,
   drawnToolState,
   ClipToolName,
+  screenshotsState,
 } from "./clip-state";
 import { ScreenLogRenderer, screenLogSignal } from "../components/screen-log";
 import {
@@ -37,6 +36,9 @@ import { DotSpinner } from "../components/dot-spinner";
 import { TauriBroadcast } from "../common/tauri-broadcast";
 import { listen } from "@tauri-apps/api/event";
 import { Tooltip } from "../components/tooltip";
+import { getClipResult } from "./draw-result";
+import { cacheDir, join } from "@tauri-apps/api/path";
+import { randomToken } from "../common/random";
 
 const STYLES_CONSTS = {
   toolsContainerPaddingX: 4,
@@ -51,186 +53,6 @@ function dataUrlToBytes(dataUrl: string): Uint8Array {
   const bytes = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
   return bytes;
-}
-
-async function getClippedImage(mode: "dataUrl"): Promise<string>;
-async function getClippedImage(mode: "buffer"): Promise<ArrayBuffer>;
-async function getClippedImage(mode: "tauri-img"): Promise<TauriImage>;
-async function getClippedImage(mode: "dataUrl" | "buffer" | "tauri-img") {
-  const clipArea = detectArea(
-    coordTrans.scalePoint(
-      clipState.data.startPointGlobalNotNormalized,
-      screenshotMetaState.data!.scale
-    ),
-    coordTrans.scalePoint(
-      clipState.data.endPointGlobalNotNormalized,
-      screenshotMetaState.data!.scale
-    )
-  );
-  if (!clipArea) {
-    screenLogSignal.emit("clip area is empty, not clipping");
-    throw new Error("Clip area is empty");
-  }
-  const screenshotRecord = screenshotsState.data;
-  const screenshots = Object.values(screenshotRecord);
-
-  // create result canvas that will hold all screenshots
-  const resultCanvas = document.createElement("canvas");
-  const desktopBounds = coordTrans.getDesktopBounds(
-    screenshots.map(coordTrans.screenshotToDisplay)
-  );
-  resultCanvas.width = desktopBounds.width;
-  resultCanvas.height = desktopBounds.height;
-  const resultCanvasCtx = resultCanvas.getContext("2d");
-  if (!resultCanvasCtx) {
-    screenLogSignal.emit("failed to get canvas context");
-    throw new Error("Failed to get canvas context");
-  }
-
-  // draw all screenshots in a single canvas
-  const draw = (s: Screenshot) => {
-    return new Promise<void>((resolve) => {
-      const normalizedPoint = coordTrans.globalToNormalized(
-        { x: s.x, y: s.y },
-        displaysState.data
-      );
-      const img = new Image();
-      img.src = `data:image/jpeg;base64,${s.image_data}`;
-      img.onload = () => {
-        resultCanvasCtx.drawImage(
-          img,
-          normalizedPoint.x,
-          normalizedPoint.y,
-          s.width,
-          s.height
-        );
-        resolve();
-      };
-    });
-  };
-  for (const s of screenshots) {
-    await draw(s);
-  }
-
-  // draw tools result to screenshot result canvas
-  const drawnResults = drawnToolState.data;
-  for (const toolResult of drawnResults) {
-    switch (toolResult.tool) {
-      case "line": {
-        const data = toolResult.data as ClipToolLineData;
-        resultCanvasCtx.save();
-
-        resultCanvasCtx.lineWidth =
-          data.lineWidth * screenshotMetaState.data!.scale;
-        resultCanvasCtx.strokeStyle = data.strokeStyle;
-        const normalizedStartP = coordTrans.globalToNormalized(
-          data.startPoint!,
-          displaysState.data
-        );
-        const normalizedEndP = coordTrans.globalToNormalized(
-          data.endPoint!,
-          displaysState.data
-        );
-        screenLogSignal.emit(
-          `drew line from ${normalizedStartP.x},${normalizedStartP.y} to ${
-            normalizedEndP.x
-          },${normalizedEndP.y}.
-          global: ${data.startPoint!.x},${data.startPoint!.y} to ${
-            data.endPoint!.x
-          },${data.endPoint!.y}
-          `
-        );
-
-        resultCanvasCtx.beginPath();
-        resultCanvasCtx.moveTo(normalizedStartP.x, normalizedStartP.y);
-        resultCanvasCtx.lineTo(normalizedEndP.x, normalizedEndP.y);
-        resultCanvasCtx.stroke();
-        resultCanvasCtx.closePath();
-
-        resultCanvasCtx.restore();
-        break;
-      }
-      case "rect": {
-        const data = toolResult.data as ClipToolRectData;
-        resultCanvasCtx.save();
-
-        resultCanvasCtx.lineWidth =
-          data.lineWidth * screenshotMetaState.data!.scale;
-        resultCanvasCtx.strokeStyle = data.strokeStyle;
-        const normalizedStartP = coordTrans.globalToNormalized(
-          data.startPoint!,
-          displaysState.data
-        );
-        const normalizedEndP = coordTrans.globalToNormalized(
-          data.endPoint!,
-          displaysState.data
-        );
-        const area = detectArea(
-          coordTrans.scalePoint(
-            normalizedStartP,
-            screenshotMetaState.data!.scale
-          ),
-          coordTrans.scalePoint(normalizedEndP, screenshotMetaState.data!.scale)
-        );
-        if (!area) {
-          resultCanvasCtx.restore();
-          return;
-        }
-
-        resultCanvasCtx.strokeRect(area.x, area.y, area.width, area.height);
-        resultCanvasCtx.restore();
-        break;
-      }
-      default: {
-        break;
-      }
-    }
-  }
-
-  const clipCanvas = document.createElement("canvas");
-  clipCanvas.width = clipArea.width;
-  clipCanvas.height = clipArea.height;
-  const clipCtx = clipCanvas.getContext("2d");
-  if (!clipCtx) {
-    screenLogSignal.emit("failed to get clip canvas context");
-    throw new Error("Failed to get clip canvas context");
-  }
-
-  clipCtx.drawImage(
-    resultCanvas,
-    clipArea.x,
-    clipArea.y,
-    clipArea.width,
-    clipArea.height,
-    0,
-    0,
-    clipArea.width,
-    clipArea.height
-  );
-
-  if (mode === "dataUrl") {
-    const clippedImgUrl = clipCanvas.toDataURL("image/jpeg");
-    return clippedImgUrl;
-  }
-  if (mode === "buffer") {
-    return clipCtx.getImageData(0, 0, clipArea.width, clipArea.height).data
-      .buffer;
-  }
-  if (mode === "tauri-img") {
-    const imageData = clipCtx.getImageData(
-      0,
-      0,
-      clipArea.width,
-      clipArea.height
-    );
-    return TauriImage.new(
-      imageData.data.buffer,
-      clipArea.width,
-      clipArea.height
-    );
-  }
-
-  throw new Error("Invalid mode, must be 'dataUrl' or 'buffer'");
 }
 
 function setClipStartState() {
@@ -401,18 +223,25 @@ function visibleToolsContainer() {
   toolsContainer.style.top = `${containerLeftTop.y}px`;
 }
 
-function isMouseInsideUI(e: MouseEvent): boolean {
+function isMouseInsideUI(globalPoint?: Point): boolean {
+  if (!globalPoint) return false;
+
   const isUserSelected = clipState.data.isUserSelected;
   const toolsContainer = document.getElementById(
     "clip-tools-container"
   ) as HTMLDivElement;
   const toolsContainerRect = toolsContainer.getBoundingClientRect();
+  const clientP = coordTrans.globalToClient(
+    globalPoint,
+    { displayId: screenshotMetaState.data!.id },
+    displaysState.data
+  );
   if (
     isUserSelected &&
-    e.clientX >= toolsContainerRect.left &&
-    e.clientX <= toolsContainerRect.right &&
-    e.clientY >= toolsContainerRect.top &&
-    e.clientY <= toolsContainerRect.bottom
+    clientP.x >= toolsContainerRect.left &&
+    clientP.x <= toolsContainerRect.right &&
+    clientP.y >= toolsContainerRect.top &&
+    clientP.y <= toolsContainerRect.bottom
   ) {
     return true;
   }
@@ -423,10 +252,10 @@ function isMouseInsideUI(e: MouseEvent): boolean {
     toolSettingsContainer.getBoundingClientRect();
   if (
     isUserSelected &&
-    e.clientX >= toolSettingsContainerRect.left &&
-    e.clientX <= toolSettingsContainerRect.right &&
-    e.clientY >= toolSettingsContainerRect.top &&
-    e.clientY <= toolSettingsContainerRect.bottom
+    clientP.x >= toolSettingsContainerRect.left &&
+    clientP.x <= toolSettingsContainerRect.right &&
+    clientP.y >= toolSettingsContainerRect.top &&
+    clientP.y <= toolSettingsContainerRect.bottom
   ) {
     return true;
   }
@@ -489,6 +318,31 @@ listen("mouse-move", (e) => {
     );
   }
 });
+type MouseButton = "left" | "right";
+listen("mouse-btn-press", (e) => {
+  const button = e.payload as MouseButton;
+  if (button === "left") {
+    if (isMouseInsideUI(mousePointState.data)) {
+      return;
+    }
+    const needReturn = handleInvokeClipToolStart();
+    if (needReturn) return;
+    TauriBroadcast.broadcast("clip-start");
+  }
+});
+listen("mouse-btn-release", (e) => {
+  const button = e.payload as MouseButton;
+  if (button === "left") {
+    if (isMouseInsideUI(mousePointState.data)) {
+      return;
+    }
+    const needReturn = handleInvokeClipToolEnd();
+    if (needReturn) return;
+    TauriBroadcast.broadcast("clip-end", {
+      displayId: screenshotMetaState.data!.id,
+    });
+  }
+});
 TauriBroadcast.listen("clip-start", () => {
   setClipStartState();
 });
@@ -548,24 +402,6 @@ TauriBroadcast.listen("clip-tool-end", (data) => {
 
 export function ClipOverlay() {
   useEffect(() => {
-    const handleMouseDown = (e: MouseEvent) => {
-      if (isMouseInsideUI(e)) {
-        return;
-      }
-      const needReturn = handleInvokeClipToolStart();
-      if (needReturn) return;
-      TauriBroadcast.broadcast("clip-start");
-    };
-    const handleMouseUp = (e: MouseEvent) => {
-      if (isMouseInsideUI(e)) {
-        return;
-      }
-      const needReturn = handleInvokeClipToolEnd();
-      if (needReturn) return;
-      TauriBroadcast.broadcast("clip-end", {
-        displayId: screenshotMetaState.data!.id,
-      });
-    };
     // 用 requestAnimationFrame 和浏览器帧同步, 减少计算次数
     const frameClipStateChange = () => {
       try {
@@ -654,13 +490,6 @@ export function ClipOverlay() {
       document.getElementById("clip-overlay-canvas") as HTMLCanvasElement,
       screenshotMetaState.data!
     );
-    window.addEventListener("mousedown", handleMouseDown);
-    window.addEventListener("mouseup", handleMouseUp);
-
-    return () => {
-      window.removeEventListener("mousedown", handleMouseDown);
-      window.removeEventListener("mouseup", handleMouseUp);
-    };
   }, []);
 
   return (
@@ -886,32 +715,7 @@ function ScreenshotUI() {
 
         <div className="clip-tool-separator" />
 
-        <TooltipBtn tooltip="Save">
-          <button
-            className="clip-tool-btn"
-            onClick={async () => {
-              try {
-                const clippedImg = await getClippedImage("dataUrl");
-                const targetPath = await save({
-                  defaultPath: `${Date.now()}.jpg`,
-                  filters: [
-                    {
-                      name: "JPEG Image",
-                      extensions: ["jpg", "jpeg"],
-                    },
-                  ],
-                });
-                if (!targetPath) return;
-                await writeFile(targetPath, dataUrlToBytes(clippedImg));
-                TauriBroadcast.broadcast("clip-cancel");
-              } catch (error) {
-                screenLogSignal.emit(`Failed to save clipped image: ${error}`);
-              }
-            }}
-          >
-            <DownloadIcon />
-          </button>
-        </TooltipBtn>
+        <SaveLocalBtn />
         <TooltipBtn tooltip="Cancel">
           <button
             className="clip-tool-btn"
@@ -1299,6 +1103,47 @@ function ToolBtn({ name, tooltip, children, onClick }: ToolBtnProps) {
   );
 }
 
+function SaveLocalBtn() {
+  const [loading, setLoading] = useState(false);
+
+  return (
+    <TooltipBtn tooltip="Save">
+      <button
+        className="clip-tool-btn"
+        onClick={async () => {
+          try {
+            setLoading(true);
+            const clipResult = await getClipResult({
+              screenshots: Object.values(screenshotsState.data),
+              clipStateData: clipState.data,
+              screenshotMetaData: screenshotMetaState.data!,
+              toolResults: drawnToolState.data,
+            });
+            const targetPath = await save({
+              defaultPath: `${Date.now()}`,
+              filters: [
+                {
+                  name: "Image File",
+                  extensions: [screenshotMetaState.data!.format],
+                },
+              ],
+            });
+            if (!targetPath) return;
+            await writeFile(targetPath, dataUrlToBytes(clipResult.dataUrl));
+            TauriBroadcast.broadcast("clip-cancel");
+          } catch (error) {
+            screenLogSignal.emit(`Failed to save clipped image: ${error}`);
+          } finally {
+            setLoading(false);
+          }
+        }}
+      >
+        {loading ? <DotSpinner /> : <DownloadIcon />}
+      </button>
+    </TooltipBtn>
+  );
+}
+
 function CopyToClipboardBtn() {
   const [loading, setLoading] = useState(false);
 
@@ -1312,10 +1157,22 @@ function CopyToClipboardBtn() {
 
           try {
             setLoading(true);
-            const clippedImg = await getClippedImage("tauri-img");
-            if (!clippedImg) {
-              return;
-            }
+            const clipResult = await getClipResult({
+              screenshots: Object.values(screenshotsState.data),
+              clipStateData: clipState.data,
+              screenshotMetaData: screenshotMetaState.data!,
+              toolResults: drawnToolState.data,
+            });
+
+            const filename = `screenshot-tmp-clip-${Date.now()}-${randomToken()}.png`;
+            await writeFile(filename, dataUrlToBytes(clipResult.dataUrl), {
+              baseDir: BaseDirectory.Cache,
+            });
+            const clippedImg = await TauriImage.fromPath(
+              await join(await cacheDir(), filename)
+            );
+            await remove(filename, { baseDir: BaseDirectory.Cache });
+
             await writeImage(clippedImg);
             await TauriBroadcast.broadcast("clip-cancel");
           } catch (error) {

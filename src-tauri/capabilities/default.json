@@ -19,6 +19,15 @@
 
     "fs:default",
     "fs:allow-app-write",
+    "fs:allow-remove",
+    {
+      "identifier": "fs:allow-app-write",
+      "allow": [{ "path": "$CACHE/*" }]
+    },
+    {
+      "identifier": "fs:allow-remove",
+      "allow": [{ "path": "$CACHE/*" }]
+    },
 
     "opener:default",
 
