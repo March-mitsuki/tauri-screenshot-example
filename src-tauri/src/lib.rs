@@ -5,6 +5,11 @@ use base64::{engine::general_purpose, Engine};
 use serde::{Deserialize, Serialize};
 use tauri::{Emitter, Manager};
 
+#[cfg(target_os = "macos")]
+use objc2::MainThreadMarker;
+#[cfg(target_os = "macos")]
+use objc2_app_kit::{NSApp, NSApplicationPresentationOptions};
+
 #[derive(Serialize, Clone)]
 pub struct Screenshot {
     id: u32,
@@ -128,11 +133,65 @@ async fn handle_screenshot(app: tauri::AppHandle) -> Result<()> {
                 state.screenshots.remove(&window_label);
                 state.is_screenshotting = false;
                 println!("Screenshot data removed for: {}", window_label);
+
+                #[cfg(target_os = "macos")]
+                {
+                    if let Err(e) = set_overlay_mode(false) {
+                        eprintln!("Failed to unset overlay mode: {}", e);
+                    }
+                }
             }
         });
+
+        // #[cfg(target_os = "macos")]
+        // {
+        //     let window_clone = window.clone();
+        //     app.run_on_main_thread(move || {
+        //         if let Ok(ns_window_ptr) = window_clone.ns_window() {
+        //             unsafe {
+        //                 let ns_window: &NSWindow = &*(ns_window_ptr as *mut NSWindow);
+        //                 // let behavior = NSWindowCollectionBehavior::from_bits_retain(
+        //                 //     NSWindowCollectionBehavior::CanJoinAllSpaces.bits()
+        //                 //         | NSWindowCollectionBehavior::FullScreenAuxiliary.bits()
+        //                 //         | NSWindowCollectionBehavior::Full,
+        //                 // );
+
+        //                 // // 设置窗口层级到可以盖住顶部菜单和Dock
+        //                 // ns_window.setCollectionBehavior(behavior);
+        //                 ns_window.setLevel(NSScreenSaverWindowLevel);
+        //             }
+        //         } else {
+        //             eprintln!("Failed to get NSWindow pointer");
+        //         }
+        //     })?;
+        // }
     }
 
     Ok(())
+}
+
+#[tauri::command]
+fn set_overlay_mode(enable: bool) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        let mtm = MainThreadMarker::new().unwrap();
+        let app = NSApp(mtm);
+        let opts = if enable {
+            NSApplicationPresentationOptions::HideDock
+                | NSApplicationPresentationOptions::HideMenuBar
+                | NSApplicationPresentationOptions::DisableMenuBarTransparency
+                | NSApplicationPresentationOptions::DisableProcessSwitching
+            // | NSApplicationPresentationOptions::DisableAppleMenu
+        } else {
+            NSApplicationPresentationOptions::Default
+        };
+        app.setPresentationOptions(opts);
+        println!(
+            "Overlay mode {}",
+            if enable { "enabled" } else { "disabled" }
+        );
+        Ok(())
+    }
 }
 
 #[tauri::command]
@@ -259,6 +318,7 @@ fn get_all_displays() -> Result<Vec<Display>> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
@@ -285,6 +345,10 @@ pub fn run() {
                                     y: y as i32,
                                 },
                             );
+                        } else if let rdev::EventType::ButtonPress(rdev::Button::Left) =
+                            e.event_type
+                        {
+                            let _ = app_clone.emit("mouse-button-press", "left");
                         }
                     });
                 });
@@ -293,6 +357,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            set_overlay_mode,
             get_screenshot_format,
             set_screenshot_format,
             freeze_screens,

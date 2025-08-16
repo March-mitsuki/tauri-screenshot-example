@@ -2,6 +2,7 @@ import "./index.css";
 import { invoke } from "@tauri-apps/api/core";
 import { LogicalPosition, LogicalSize } from "@tauri-apps/api/dpi";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { platform } from "@tauri-apps/plugin-os";
 import { useEffect, useState } from "react";
 import ReactDOM from "react-dom/client";
 import { ClipOverlay } from "./clip-overlay";
@@ -132,7 +133,7 @@ function Overlay() {
         new LogicalPosition(screenshot.x, screenshot.y)
       ),
       webviewWindow.setSize(
-        new LogicalSize(screenshot.width, screenshot.height)
+        new LogicalSize(screenshot.monitor_width, screenshot.monitor_height)
       ),
       webviewWindow.setFullscreen(true),
       webviewWindow.setResizable(false),
@@ -141,6 +142,9 @@ function Overlay() {
     ];
     await Promise.all(tasks);
     await webviewWindow.show();
+    if (platform() === "macos") {
+      await invoke("set_overlay_mode", { enable: true });
+    }
     // 可能会在不同的 webviewWindow 中被设置多次
     // 但没关系, 最后随便 focus 一个就行
     await webviewWindow.setFocus();
