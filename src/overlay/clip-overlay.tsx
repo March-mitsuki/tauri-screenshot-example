@@ -365,22 +365,66 @@ type MouseButton = "left" | "right";
 listen("mouse-btn-press", (e) => {
   const button = e.payload as MouseButton;
   if (button === "left") {
+    if (!mousePointState.data || !screenshotMetaState.data) {
+      screenLogSignal.emit(
+        "mouse-btn-press: invalid mousePoint or screenshotMeta"
+      );
+      return;
+    }
+    if (
+      !coordTrans.isGlobalPointInDisplay(
+        mousePointState.data,
+        coordTrans.screenshotToDisplay(screenshotMetaState.data)
+      )
+    ) {
+      screenLogSignal.emit("mouse-btn-press: outside this display, ignore");
+      return;
+    }
     if (isMouseInsideUI(mousePointState.data)) {
+      screenLogSignal.emit("mouse-btn-press: mouse inside UI, ignore");
       return;
     }
     const needReturn = handleInvokeClipToolStart();
-    if (needReturn) return;
+    if (needReturn) {
+      screenLogSignal.emit(
+        "mouse-btn-press: clip tool start invoked and return early"
+      );
+      return;
+    }
+    screenLogSignal.emit("mouse-btn-press: clip start");
     TauriBroadcast.broadcast("clip-start");
   }
 });
 listen("mouse-btn-release", (e) => {
   const button = e.payload as MouseButton;
   if (button === "left") {
+    if (!mousePointState.data || !screenshotMetaState.data) {
+      screenLogSignal.emit(
+        "mouse-btn-release: invalid mousePoint or screenshotMeta"
+      );
+      return;
+    }
+    if (
+      !coordTrans.isGlobalPointInDisplay(
+        mousePointState.data,
+        coordTrans.screenshotToDisplay(screenshotMetaState.data)
+      )
+    ) {
+      screenLogSignal.emit("mouse-btn-release: outside this display, ignore");
+      return;
+    }
     if (isMouseInsideUI(mousePointState.data)) {
+      screenLogSignal.emit("mouse-btn-release: mouse inside UI, ignore");
       return;
     }
     const needReturn = handleInvokeClipToolEnd();
-    if (needReturn) return;
+    if (needReturn) {
+      screenLogSignal.emit(
+        "mouse-btn-release: clip tool end invoked and return early"
+      );
+      return;
+    }
+    screenLogSignal.emit("mouse-btn-release: clip end");
     TauriBroadcast.broadcast("clip-end", {
       displayId: screenshotMetaState.data!.id,
     });
@@ -389,14 +433,13 @@ listen("mouse-btn-release", (e) => {
 TauriBroadcast.listen("clip-start", () => {
   setClipStartState();
 });
-TauriBroadcast.listen("clip-end", () => {
+TauriBroadcast.listen("clip-end", (data) => {
   setClipEndState();
   // displayId 是用户点击的屏幕的 ID
-  // // 这里过滤掉其他的是因为只需要做一次计算就够了
-  // if (data.displayId === screenshotMetaState.data?.id) {
-  //   onClipEnd();
-  // }
-  onClipEnd();
+  // 这里过滤掉其他的是因为只需要做一次计算就够了
+  if (data.displayId === screenshotMetaState.data?.id) {
+    onClipEnd();
+  }
 });
 TauriBroadcast.listen("clip-end-current-display", (data) => {
   // displayId 是用户选定区域最终右下角坐标所在的显示器的 ID
@@ -565,7 +608,9 @@ export function ClipOverlay() {
 function ScreenshotUI() {
   useEffect(() => {
     // ===== pixel info =====
+    let errorCount = 0;
     const drawPixelInfo = () => {
+      if (errorCount > 10) return;
       try {
         const desktopBounds = displaysState.desktopBounds!;
         const container = document.getElementById(
@@ -669,6 +714,7 @@ function ScreenshotUI() {
         mousePointRgbDiv.textContent = `RGB: ${mousePointRGB.r}, ${mousePointRGB.g}, ${mousePointRGB.b}`;
         mousePointHexDiv.textContent = `HEX: ${rgbToHex(mousePointRGB)}`;
       } catch (error) {
+        errorCount += 1;
         screenLogSignal.emit(`drawPixelInfo error: ${error}`);
       } finally {
         requestAnimationFrame(drawPixelInfo);

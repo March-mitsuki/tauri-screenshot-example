@@ -170,14 +170,18 @@ async function drawScreenshot(
     { x: screenshot.x, y: screenshot.y },
     displays
   );
+  const scaledLeftTop = coordTrans.scalePoint(
+    normalizedLeftTop,
+    screenshot.scale
+  )!;
   const url = `data:image/${screenshot.format};base64,${screenshot.image_data}`;
   const res = await fetch(url);
   const blob = await res.blob();
   const bitmap = await createImageBitmap(blob);
   ctx.drawImage(
     bitmap,
-    normalizedLeftTop.x,
-    normalizedLeftTop.y,
+    scaledLeftTop.x,
+    scaledLeftTop.y,
     screenshot.width,
     screenshot.height
   );

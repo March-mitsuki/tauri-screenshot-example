@@ -256,6 +256,10 @@ fn setup_desktop_shortcuts(app: &mut tauri::App) -> Result<()> {
                 }
                 println!("Capturing screenshot...");
                 state.is_screenshotting = true;
+                state.displays = get_all_displays().unwrap_or_else(|e| {
+                    println!("Error getting displays: {}", e);
+                    vec![]
+                });
                 let app_handle = app.clone();
                 let app_handle_2 = app.clone();
                 tauri::async_runtime::spawn(async move {
