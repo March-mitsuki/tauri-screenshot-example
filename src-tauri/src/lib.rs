@@ -169,6 +169,14 @@ fn set_overlay_mode(enable: bool) -> Result<(), String> {
         );
         Ok(())
     }
+    #[cfg(not(target_os = "macos"))]
+    {
+        // Overlay mode is not supported on non-macOS platforms
+        Err(format!(
+            "Try to {} overlay mode. But overlay mode is only supported on macOS.",
+            enable
+        ))
+    }
 }
 
 #[tauri::command]
