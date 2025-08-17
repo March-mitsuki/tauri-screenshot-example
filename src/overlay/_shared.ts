@@ -108,7 +108,12 @@ export function getMouseAroundArea(
     height: padding * 2,
   };
 
-  const pointPixel = ctx.getImageData(px, py, 1, 1);
+  const pointPixel = ctx.getImageData(
+    Math.floor(px * monitorScaleFactor),
+    Math.floor(py * monitorScaleFactor),
+    1,
+    1
+  );
   const pointPixelRGB: RGB = {
     r: pointPixel.data[0],
     g: pointPixel.data[1],
