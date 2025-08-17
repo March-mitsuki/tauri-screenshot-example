@@ -606,145 +606,9 @@ export function ClipOverlay() {
 }
 
 function ScreenshotUI() {
-  useEffect(() => {
-    // ===== pixel info =====
-    let errorCount = 0;
-    const drawPixelInfo = () => {
-      if (errorCount > 10) return;
-      try {
-        const desktopBounds = displaysState.desktopBounds!;
-        const container = document.getElementById(
-          "pixel-info-container"
-        ) as HTMLDivElement;
-        if (clipState.data.isUserSelected) {
-          container.style.visibility = "hidden";
-          return;
-        }
-
-        const globalPoint = mousePointState.data;
-        if (!globalPoint) return;
-
-        const thisDisplayData = coordTrans.screenshotToDisplay(
-          screenshotMetaState.data!
-        );
-        const clientPoint = coordTrans.globalToClient(
-          globalPoint,
-          { displayId: thisDisplayData.id },
-          displaysState.data
-        );
-
-        if (globalPoint.x < desktopBounds.originX) {
-          globalPoint.x = desktopBounds.originX;
-        }
-        if (globalPoint.x > desktopBounds.originX + desktopBounds.width) {
-          globalPoint.x = desktopBounds.originX + desktopBounds.width;
-        }
-        if (globalPoint.y < desktopBounds.originY) {
-          globalPoint.y = desktopBounds.originY;
-        }
-        if (globalPoint.y > desktopBounds.originY + desktopBounds.height) {
-          globalPoint.y = desktopBounds.originY + desktopBounds.height;
-        }
-        const isInThisDisplay = coordTrans.isGlobalPointInDisplay(
-          globalPoint,
-          thisDisplayData
-        );
-        if (!isInThisDisplay) {
-          container.style.visibility = "hidden";
-          return;
-        } else {
-          container.style.visibility = "visible";
-        }
-
-        // 处理绘制时的边界
-        if (clientPoint.x < 0) clientPoint.x = 0;
-        if (clientPoint.y < 0) clientPoint.y = 0;
-        if (clientPoint.x > window.innerWidth)
-          clientPoint.x = window.innerWidth;
-        if (clientPoint.y > window.innerHeight)
-          clientPoint.y = window.innerHeight;
-
-        const aroundAreaImg = document.getElementById(
-          "mouse-around-area-img"
-        ) as HTMLImageElement;
-        const mousePointDiv = document.getElementById(
-          "mouse-point-div"
-        ) as HTMLDivElement;
-        const mousePointRgbDiv = document.getElementById(
-          "mouse-point-rgb-div"
-        ) as HTMLDivElement;
-        const mousePointHexDiv = document.getElementById(
-          "mouse-point-hex-div"
-        ) as HTMLDivElement;
-
-        const screenshotCanvas = document.getElementById(
-          "screenshot-canvas"
-        ) as HTMLCanvasElement;
-        const [mousePointRGB, aroundAreaImgUrl, scaledCanvasWH] =
-          getMouseAroundArea(screenshotCanvas, clientPoint, 15, 5);
-
-        aroundAreaImg.src = aroundAreaImgUrl;
-        aroundAreaImg.width = scaledCanvasWH.width;
-        aroundAreaImg.height = scaledCanvasWH.height;
-
-        container.style.width = `${scaledCanvasWH.width}px`;
-        let containerLeft = clientPoint.x + STYLES_CONSTS.overflowPadding;
-        let containerTop = clientPoint.y + STYLES_CONSTS.overflowPadding;
-        let containerRight = containerLeft + scaledCanvasWH.width;
-        let containerBottom =
-          containerTop + container.getBoundingClientRect().height;
-
-        if (containerRight > window.innerWidth) {
-          containerLeft =
-            clientPoint.x -
-            scaledCanvasWH.width -
-            STYLES_CONSTS.overflowPadding;
-        }
-        if (containerBottom > window.innerHeight) {
-          containerTop =
-            clientPoint.y -
-            container.getBoundingClientRect().height -
-            STYLES_CONSTS.overflowPadding;
-        }
-
-        container.style.left = `${containerLeft}px`;
-        container.style.top = `${containerTop}px`;
-
-        mousePointDiv.textContent = `(${globalPoint.x}, ${globalPoint.y})`;
-        mousePointRgbDiv.textContent = `RGB: ${mousePointRGB.r}, ${mousePointRGB.g}, ${mousePointRGB.b}`;
-        mousePointHexDiv.textContent = `HEX: ${rgbToHex(mousePointRGB)}`;
-      } catch (error) {
-        errorCount += 1;
-        screenLogSignal.emit(`drawPixelInfo error: ${error}`);
-      } finally {
-        requestAnimationFrame(drawPixelInfo);
-      }
-    };
-    requestAnimationFrame(drawPixelInfo);
-  }, []);
-
   return (
     <>
-      <div
-        id="pixel-info-container"
-        style={{
-          position: "absolute",
-          visibility: "hidden",
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          fontSize: "12px",
-          zIndex: 20,
-          width: "100px",
-          backgroundColor: "rgba(43, 43, 43, 1)",
-          color: "whitesmoke",
-        }}
-      >
-        <img id="mouse-around-area-img" />
-        <div id="mouse-point-div" />
-        <div id="mouse-point-rgb-div" />
-        <div id="mouse-point-hex-div" />
-      </div>
+      <PixelInfo />
 
       {/* Tool bar rendering will be handle in onClipEnd function */}
       <div
@@ -827,6 +691,186 @@ function ScreenshotUI() {
       </div>
       <ToolSettings />
     </>
+  );
+}
+
+function PixelInfo() {
+  const [rgbContent, setRgbContent] = useState<React.ReactNode>();
+  const [hexContent, setHexContent] = useState<React.ReactNode>();
+
+  useEffect(() => {
+    const drawPixelInfo = () => {
+      try {
+        const desktopBounds = displaysState.desktopBounds!;
+        const container = document.getElementById(
+          "pixel-info-container"
+        ) as HTMLDivElement;
+        if (clipState.data.isUserSelected) {
+          container.style.visibility = "hidden";
+          return;
+        }
+
+        const globalPoint = mousePointState.data;
+        if (!globalPoint) return;
+
+        const thisDisplayData = coordTrans.screenshotToDisplay(
+          screenshotMetaState.data!
+        );
+        const clientPoint = coordTrans.globalToClient(
+          globalPoint,
+          { displayId: thisDisplayData.id },
+          displaysState.data
+        );
+
+        if (globalPoint.x < desktopBounds.originX) {
+          globalPoint.x = desktopBounds.originX;
+        }
+        if (globalPoint.x > desktopBounds.originX + desktopBounds.width) {
+          globalPoint.x = desktopBounds.originX + desktopBounds.width;
+        }
+        if (globalPoint.y < desktopBounds.originY) {
+          globalPoint.y = desktopBounds.originY;
+        }
+        if (globalPoint.y > desktopBounds.originY + desktopBounds.height) {
+          globalPoint.y = desktopBounds.originY + desktopBounds.height;
+        }
+        const isInThisDisplay = coordTrans.isGlobalPointInDisplay(
+          globalPoint,
+          thisDisplayData
+        );
+        if (!isInThisDisplay) {
+          container.style.visibility = "hidden";
+          return;
+        } else {
+          container.style.visibility = "visible";
+        }
+
+        // 处理绘制时的边界
+        if (clientPoint.x < 0) clientPoint.x = 0;
+        if (clientPoint.y < 0) clientPoint.y = 0;
+        if (clientPoint.x > window.innerWidth)
+          clientPoint.x = window.innerWidth;
+        if (clientPoint.y > window.innerHeight)
+          clientPoint.y = window.innerHeight;
+
+        const aroundAreaImg = document.getElementById(
+          "mouse-around-area-img"
+        ) as HTMLImageElement;
+        const mousePointDiv = document.getElementById(
+          "mouse-point-div"
+        ) as HTMLDivElement;
+
+        const screenshotCanvas = document.getElementById(
+          "screenshot-canvas"
+        ) as HTMLCanvasElement;
+        const [mousePointRGB, aroundAreaImgUrl, scaledCanvasWH] =
+          getMouseAroundArea(screenshotCanvas, clientPoint, 15, 5);
+
+        aroundAreaImg.src = aroundAreaImgUrl;
+        aroundAreaImg.width = scaledCanvasWH.width;
+        aroundAreaImg.height = scaledCanvasWH.height;
+
+        container.style.width = `${scaledCanvasWH.width}px`;
+        let containerLeft = clientPoint.x + STYLES_CONSTS.overflowPadding;
+        let containerTop = clientPoint.y + STYLES_CONSTS.overflowPadding;
+        let containerRight = containerLeft + scaledCanvasWH.width;
+        let containerBottom =
+          containerTop + container.getBoundingClientRect().height;
+
+        if (containerRight > window.innerWidth) {
+          containerLeft =
+            clientPoint.x -
+            scaledCanvasWH.width -
+            STYLES_CONSTS.overflowPadding;
+        }
+        if (containerBottom > window.innerHeight) {
+          containerTop =
+            clientPoint.y -
+            container.getBoundingClientRect().height -
+            STYLES_CONSTS.overflowPadding;
+        }
+
+        container.style.left = `${containerLeft}px`;
+        container.style.top = `${containerTop}px`;
+
+        mousePointDiv.textContent = `(${globalPoint.x}, ${globalPoint.y})`;
+        setRgbContent(
+          <>
+            <div>RGB:</div>
+            <Circle
+              r={5}
+              style={{
+                backgroundColor: `rgb(${mousePointRGB.r}, ${mousePointRGB.g}, ${mousePointRGB.b})`,
+              }}
+            />
+            <div>
+              {mousePointRGB.r}, {mousePointRGB.g}, {mousePointRGB.b}
+            </div>
+          </>
+        );
+        setHexContent(
+          <>
+            <div>HEX:</div>
+            <Circle
+              r={5}
+              style={{
+                backgroundColor: rgbToHex(mousePointRGB),
+              }}
+            />
+            <div>{rgbToHex(mousePointRGB)}</div>
+          </>
+        );
+      } catch (error) {
+        screenLogSignal.emit(`drawPixelInfo error: ${error}`);
+      } finally {
+        requestAnimationFrame(drawPixelInfo);
+      }
+    };
+    requestAnimationFrame(drawPixelInfo);
+  }, []);
+
+  return (
+    <div
+      id="pixel-info-container"
+      style={{
+        position: "absolute",
+        visibility: "hidden",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        fontSize: "12px",
+        zIndex: 20,
+        width: "100px",
+        backgroundColor: "rgba(43, 43, 43, 1)",
+        color: "whitesmoke",
+      }}
+    >
+      <img id="mouse-around-area-img" />
+      <div id="mouse-point-div" />
+      <div
+        id="mouse-point-rgb-div"
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: "4px",
+        }}
+      >
+        {rgbContent}
+      </div>
+      <div
+        id="mouse-point-hex-div"
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: "4px",
+          paddingBottom: "4px",
+        }}
+      >
+        {hexContent}
+      </div>
+    </div>
   );
 }
 
